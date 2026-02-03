@@ -8,4 +8,6 @@ python-jose
 passlib[bcrypt]
 redis
 confluent-kafka
+pydantic-settings
 python-dotenv
+

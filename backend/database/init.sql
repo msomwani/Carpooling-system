@@ -40,3 +40,11 @@ CREATE TABLE bookings (
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_rides_search ON rides(source, destination, departure_time);
 CREATE INDEX idx_bookings_ride ON bookings(ride_id);
+
+-- Prevents duplicate booking
+CREATE TABLE booking_idempotency (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    idempotency_key VARCHAR(100) NOT NULL UNIQUE,
+    booking_id UUID,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);

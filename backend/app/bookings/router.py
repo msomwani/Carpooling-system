@@ -1,0 +1,38 @@
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy.orm import Session
+
+from app.common.db import SessionLocal
+from app.bookings.service import BookingService
+from app.bookings.schemas import BookingCreateRequest, BookingResponse
+
+router = APIRouter(prefix="/bookings", tags=["Bookings"])
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@router.post("/", response_model=BookingResponse)
+def create_booking(
+    payload: BookingCreateRequest,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    try:
+        booking = BookingService.create_booking(
+            db=db,
+            ride_id=payload.ride_id,
+            passenger_id="HARDCODED_FOR_NOW",  # auth later
+            seats_requested=payload.seats,
+            idempotency_key=idempotency_key
+        )
+        return BookingResponse(
+            booking_id=booking.id,
+            status=booking.status
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
