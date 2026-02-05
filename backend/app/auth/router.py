@@ -19,13 +19,13 @@ def get_db():
 
 @router.post("/signup")
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
-    user = AuthService.signup(db, **payload.dict())
+    user = AuthService.signup(db, **payload.model_dump())
     return {"id": user.id}
 
 
 @router.post("/login")
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = AuthService.authenticate(db, **payload.dict())
+    user = AuthService.authenticate(db, **payload.model_dump())
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
