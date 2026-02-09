@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.common.db import SessionLocal
 from app.bookings.service import BookingService
 from app.bookings.schemas import BookingCreateRequest, BookingResponse
+from app.auth.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
@@ -20,13 +21,14 @@ def get_db():
 def create_booking(
     payload: BookingCreateRequest,
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    user_id: str = Depends(get_current_user_id),   # ✅ THIS LINE WAS MISSING
     db: Session = Depends(get_db),
 ):
     try:
         booking = BookingService.create_booking(
             db=db,
             ride_id=payload.ride_id,
-            passenger_id="HARDCODED_FOR_NOW",  # auth later
+            passenger_id=user_id, 
             seats_requested=payload.seats,
             idempotency_key=idempotency_key
         )

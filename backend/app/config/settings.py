@@ -5,6 +5,7 @@ from pydantic import Field
 class Settings(BaseSettings):
     database_url: str = Field(..., env="DATABASE_URL")
     jwt_secret: str
+    redis_url: str
 
     class Config:
         env_file = ".env"
