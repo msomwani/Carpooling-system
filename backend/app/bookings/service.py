@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from app.rides.models import Ride
 from app.bookings.models import Booking
 from app.bookings.idempotency_model import BookingIdempotency
-
+from uuid import uuid4
 
 class BookingService:
 
@@ -18,26 +18,28 @@ class BookingService:
         idempotency_key: str
     ):
         # 1️⃣ Check idempotency
-        existing = db.query(BookingIdempotency).filter(
-            BookingIdempotency.idempotency_key == idempotency_key
-        ).first()
+        idempo = (
+            db.query(BookingIdempotency)
+            .filter(BookingIdempotency.idempotency_key == idempotency_key)
+            .first()
+        )
 
-        if existing and existing.booking_id:
-            booking = db.query(Booking).get(existing.booking_id)
-            return booking
+        if idempo and idempo.booking_id:
+            return db.query(Booking).get(idempo.booking_id)
 
-        if not existing:
-            existing = BookingIdempotency(
-                idempotency_key=idempotency_key
-            )
-            db.add(existing)
+        if not idempo:
+            idempo = BookingIdempotency(idempotency_key=idempotency_key)
+            db.add(idempo)
             db.flush()
 
         try:
-            # 2️⃣ Lock the ride row
-            ride = db.query(Ride).filter(
-                Ride.id == ride_id
-            ).with_for_update().one()
+            # 2️⃣ Lock ride
+            ride = (
+                db.query(Ride)
+                .filter(Ride.id == ride_id)
+                .with_for_update()
+                .one()
+            )
 
             # 3️⃣ Validate seats
             if ride.available_seats < seats_requested:
@@ -48,24 +50,56 @@ class BookingService:
 
             # 5️⃣ Create booking
             booking = Booking(
+                id=uuid4(),
                 ride_id=ride_id,
                 passenger_id=passenger_id,
                 seats_booked=seats_requested,
-                status="CONFIRMED"
+                status="CONFIRMED",
             )
+
             db.add(booking)
-            db.flush()
 
-            # 6️⃣ Link idempotency record
-            existing.booking_id = booking.id
+            try:
+                db.flush()
+            except IntegrityError:
+                # 🚨 Duplicate booking for same ride + passenger
+                db.rollback()
 
-            # 7️⃣ Commit transaction
+                existing_booking = (
+                    db.query(Booking)
+                    .filter(
+                        Booking.ride_id == ride_id,
+                        Booking.passenger_id == passenger_id,
+                    )
+                    .first()
+                )
+
+                return existing_booking
+
+            # 6️⃣ Link idempotency
+            idempo.booking_id = booking.id
+
+            # 7️⃣ Commit DB
             db.commit()
-
-            # 8️⃣ Kafka event would be published here (post-commit)
-
-            return booking
 
         except Exception:
             db.rollback()
             raise
+
+        # 8️⃣ Publish Kafka AFTER commit (never break booking)
+        try:
+            from app.common.kafka import publish_event
+
+            publish_event(
+                topic="booking.confirmed",
+                payload={
+                    "booking_id": str(booking.id),
+                    "ride_id": str(booking.ride_id),
+                    "passenger_id": str(booking.passenger_id),
+                },
+            )
+        except Exception as e:
+            print("Kafka publish failed:", e)
+
+        # ✅ ALWAYS return booking
+        return booking

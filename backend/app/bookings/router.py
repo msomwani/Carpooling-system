@@ -21,7 +21,7 @@ def get_db():
 def create_booking(
     payload: BookingCreateRequest,
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
-    user_id: str = Depends(get_current_user_id),   # ✅ THIS LINE WAS MISSING
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     try:
@@ -37,4 +37,4 @@ def create_booking(
             status=booking.status
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"booking failed :{str(e)}")
