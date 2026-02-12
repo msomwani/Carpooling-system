@@ -25,12 +25,23 @@ class BookingService:
         )
 
         if idempo and idempo.booking_id:
-            return db.query(Booking).get(idempo.booking_id)
-
+            return db.get(Booking, idempo.booking_id)
+        
         if not idempo:
             idempo = BookingIdempotency(idempotency_key=idempotency_key)
             db.add(idempo)
-            db.flush()
+
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+
+                idempo = (
+                    db.query(BookingIdempotency)
+                    .filter(BookingIdempotency.idempotency_key == idempotency_key)
+                    .first()
+                )
+
 
         try:
             # 2️⃣ Lock ride
