@@ -5,6 +5,8 @@ from app.common.db import SessionLocal
 from app.bookings.service import BookingService
 from app.bookings.schemas import BookingCreateRequest, BookingResponse
 from app.auth.dependencies import get_current_user_id
+from app.bookings.cancel_service import CancellationService
+
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
@@ -38,3 +40,20 @@ def create_booking(
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"booking failed :{str(e)}")
+
+
+@router.post("/{booking_id}/cancel")
+def cancel_booking(
+    booking_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    try:
+        booking = CancellationService.cancel_booking(
+            db=db,
+            booking_id=booking_id,
+            user_id=user_id,
+        )
+        return {"status": "cancelled", "booking_id": booking.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

@@ -9,7 +9,7 @@ conf = {
 }
 
 consumer = Consumer(conf)
-consumer.subscribe(["booking.confirmed"])
+consumer.subscribe(["booking.confirmed","booking.cancelled"])
 
 print("Booking consumer started...")
 
@@ -22,7 +22,12 @@ while True:
         continue
 
     event = json.loads(msg.value().decode("utf-8"))
-    print("Received booking event:", event)
+    if msg.topic() == "booking.confirmed":
+        print("Booking confirmed:", event)
+
+    elif msg.topic() == "booking.cancelled":
+        print("Booking cancelled:", event)
+    # print("Received booking event:", event)
 
     # Here you would:
     # - send email
