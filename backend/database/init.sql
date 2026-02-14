@@ -48,3 +48,12 @@ CREATE TABLE booking_idempotency (
     booking_id UUID,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+--Add to outbox event then to kafka
+CREATE TABLE outbox_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type VARCHAR(100) NOT NULL,
+    payload JSONB NOT NULL,
+    processed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
