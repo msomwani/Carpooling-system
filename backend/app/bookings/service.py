@@ -1,3 +1,4 @@
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from uuid import uuid4
@@ -6,6 +7,8 @@ from app.rides.models import Ride
 from app.bookings.models import Booking
 from app.bookings.idempotency_model import BookingIdempotency
 from app.outbox.models import OutboxEvent
+
+logger = logging.getLogger(__name__)
 
 
 class BookingService:
@@ -17,8 +20,14 @@ class BookingService:
         ride_id,
         passenger_id,
         seats_requested: int,
-        idempotency_key: str
+        idempotency_key: str,
+        correlation_id: str,
     ):
+        logger.info(
+            "Processing booking request",
+            extra={"correlation_id": correlation_id},
+        )
+
         # 1️⃣ Idempotency check
         idempo = (
             db.query(BookingIdempotency)
@@ -27,6 +36,10 @@ class BookingService:
         )
 
         if idempo and idempo.booking_id:
+            logger.info(
+                "Idempotent retry detected",
+                extra={"correlation_id": correlation_id},
+            )
             return db.get(Booking, idempo.booking_id)
 
         if not idempo:
@@ -69,13 +82,14 @@ class BookingService:
 
             idempo.booking_id = booking.id
 
-            # ✅ Write event to Outbox (NOT Kafka)
+            #Write event to Outbox WITH correlation_id
             outbox_event = OutboxEvent(
                 event_type="booking.confirmed",
                 payload={
                     "booking_id": str(booking.id),
                     "ride_id": str(booking.ride_id),
                     "passenger_id": str(booking.passenger_id),
+                    "correlation_id": correlation_id, 
                 },
             )
 
@@ -83,8 +97,17 @@ class BookingService:
 
             db.commit()
 
+            logger.info(
+                "Booking committed successfully",
+                extra={"correlation_id": correlation_id},
+            )
+
         except Exception:
             db.rollback()
+            logger.exception(
+                "Booking transaction failed",
+                extra={"correlation_id": correlation_id},
+            )
             raise
 
         return booking

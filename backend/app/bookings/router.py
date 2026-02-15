@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+import logging
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.common.db import SessionLocal
@@ -7,6 +8,7 @@ from app.bookings.schemas import BookingCreateRequest, BookingResponse
 from app.auth.dependencies import get_current_user_id
 from app.bookings.cancel_service import CancellationService
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
@@ -22,38 +24,78 @@ def get_db():
 @router.post("/", response_model=BookingResponse)
 def create_booking(
     payload: BookingCreateRequest,
+    request: Request,
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    correlation_id = request.state.correlation_id
+
+    logger.info(
+        "Booking request received",
+        extra={"correlation_id": correlation_id},
+    )
+
     try:
         booking = BookingService.create_booking(
             db=db,
             ride_id=payload.ride_id,
-            passenger_id=user_id, 
+            passenger_id=user_id,
             seats_requested=payload.seats,
-            idempotency_key=idempotency_key
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
         )
+
+        logger.info(
+            "Booking created successfully",
+            extra={"correlation_id": correlation_id},
+        )
+
         return BookingResponse(
             booking_id=booking.id,
-            status=booking.status
+            status=booking.status,
         )
+
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"booking failed :{str(e)}")
+        logger.error(
+            "Booking failed",
+            extra={"correlation_id": correlation_id},
+        )
+        raise HTTPException(status_code=400, detail=f"booking failed: {str(e)}")
 
 
 @router.post("/{booking_id}/cancel")
 def cancel_booking(
     booking_id: str,
+    request: Request,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    correlation_id = request.state.correlation_id
+
+    logger.info(
+        "Cancellation request received",
+        extra={"correlation_id": correlation_id},
+    )
+
     try:
         booking = CancellationService.cancel_booking(
             db=db,
             booking_id=booking_id,
             user_id=user_id,
+            correlation_id=correlation_id,
         )
+
+        logger.info(
+            "Booking cancelled successfully",
+            extra={"correlation_id": correlation_id},
+        )
+
         return {"status": "cancelled", "booking_id": booking.id}
+
     except ValueError as e:
+        logger.error(
+            "Cancellation failed",
+            extra={"correlation_id": correlation_id},
+        )
         raise HTTPException(status_code=400, detail=str(e))
