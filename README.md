@@ -35,7 +35,7 @@ Chosen for:
 
 ## 🧭 Architecture Diagram
 
-(docs/architecture/01_system_overview.png)
+![System Overview](docs/architecture/01_system_overview.png)
 
 ```
 
