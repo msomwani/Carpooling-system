@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.bookings.models import Booking
 from app.rides.models import Ride
 from app.outbox.models import OutboxEvent
+from app.common.redis import redis_client
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +49,37 @@ class CancellationService:
         ride.available_seats += booking.seats_booked
         booking.status = "CANCELLED"
 
-        #Write compensating event WITH correlation_id
+        # Write compensating event WITH correlation_id
         outbox_event = OutboxEvent(
             event_type="booking.cancelled",
             payload={
                 "booking_id": str(booking.id),
                 "ride_id": str(booking.ride_id),
                 "passenger_id": str(booking.passenger_id),
-                "correlation_id": correlation_id,  # 🔥 critical
+                "seats_returned": booking.seats_booked,
+                "correlation_id": correlation_id,
             },
         )
 
         db.add(outbox_event)
 
         db.commit()
+
+        #Invalidate Redis cache after successful cancellation
+        try:
+            cache_pattern = "rides:*"
+            for key in redis_client.scan_iter(match=cache_pattern):
+                redis_client.delete(key)
+            logger.info(
+                "Cache invalidated after booking cancellation",
+                extra={"correlation_id": correlation_id},
+            )
+        except Exception as cache_error:
+            # Log but don't fail the cancellation if cache invalidation fails
+            logger.warning(
+                f"Failed to invalidate cache: {cache_error}",
+                extra={"correlation_id": correlation_id},
+            )
 
         logger.info(
             "Cancellation committed successfully",

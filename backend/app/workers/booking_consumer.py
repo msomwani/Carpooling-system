@@ -2,8 +2,8 @@ from confluent_kafka import Consumer
 import json
 
 conf = {
-    "bootstrap.servers":"localhost:29092",#for external servers
-    # "bootstrap.servers": "localhost:9092",#for inetrnal servers
+    "bootstrap.servers":"localhost:29092",#for docker
+    # "bootstarp.servers":"localhost:9092"for local host
     "group.id": "booking-workers-test-1",
     "auto.offset.reset": "earliest",
 }
@@ -38,18 +38,18 @@ while True:
         consumer.commit()
         continue
 
-
     retries = 0
     success = False
 
     while retries < MAX_RETRIES and not success:
         try:
             if msg.topic() == "booking.confirmed":
-                print("Booking confirmed:", event)
-                raise Exception("Simulated failure for DLQ test")
+                print("✅ Booking confirmed:", event)
+                # TODO: Send notification email/SMS here
 
             elif msg.topic() == "booking.cancelled":
-                print("Booking cancelled:", event)
+                print("❌ Booking cancelled:", event)
+                # TODO: Send cancellation notification here
 
             success = True
 
@@ -60,7 +60,7 @@ while True:
     if not success:
         # Send to DLQ
         from app.common.kafka import publish_event
-
-        publish_event("booking.dlq",event)
+        print(f"⚠️ Moving to DLQ after {MAX_RETRIES} retries:", event)
+        publish_event("booking.dlq", event)
 
     consumer.commit()

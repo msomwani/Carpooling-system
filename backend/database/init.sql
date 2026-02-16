@@ -32,16 +32,23 @@ CREATE TABLE bookings (
     passenger_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     seats_booked INTEGER NOT NULL CHECK (seats_booked > 0),
     status VARCHAR(20) NOT NULL CHECK (status IN ('CONFIRMED', 'CANCELLED')),
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    CONSTRAINT unique_ride_passenger UNIQUE (ride_id, passenger_id)
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 -- Indexes
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_rides_search ON rides(source, destination, departure_time);
 CREATE INDEX idx_bookings_ride ON bookings(ride_id);
+CREATE INDEX idx_bookings_passenger ON bookings(passenger_id);
+CREATE INDEX idx_bookings_status ON bookings(status);
 
--- Prevents duplicate booking
+-- Partial unique index: only enforces uniqueness for CONFIRMED bookings
+-- This allows multiple CANCELLED bookings but only one CONFIRMED booking per passenger per ride
+CREATE UNIQUE INDEX unique_active_ride_passenger 
+ON bookings (ride_id, passenger_id) 
+WHERE status = 'CONFIRMED';
+
+-- Prevents duplicate booking requests
 CREATE TABLE booking_idempotency (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     idempotency_key VARCHAR(100) NOT NULL UNIQUE,
@@ -49,7 +56,7 @@ CREATE TABLE booking_idempotency (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
---Add to outbox event then to kafka
+-- Add to outbox event then to kafka
 CREATE TABLE outbox_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_type VARCHAR(100) NOT NULL,
