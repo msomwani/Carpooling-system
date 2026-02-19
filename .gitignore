@@ -3,3 +3,4 @@ backend/.env
 .DS_Store/
 *.pyc
 backend/.venv
+.pytest_cache/

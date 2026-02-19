@@ -72,6 +72,15 @@ class BookingService:
                     .filter(BookingIdempotency.idempotency_key == idempotency_key)
                     .first()
                 )
+                if idempo and idempo.booking_id:
+                    existing_booking = db.get(Booking, idempo.booking_id)
+                    if existing_booking and existing_booking.status == "CONFIRMED":
+                        logger.info(
+                            "Idempotent retry detected after race - returning confirmed booking",
+                            extra={"correlation_id": correlation_id},
+                        )
+                        increment("booking_idempotent_retry_total")
+                        return existing_booking
 
         try:
             # 2️⃣ Lock ride row
