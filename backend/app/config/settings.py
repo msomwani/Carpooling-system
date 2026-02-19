@@ -1,16 +1,17 @@
-from pydantic_settings import BaseSettings
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = Field(..., env="DATABASE_URL")
-    jwt_secret: str
-    redis_url: str
-    kafka_bootstrap_servers: str
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    database_url: str = Field(validation_alias="DATABASE_URL")
+    jwt_secret: str = Field(validation_alias="JWT_SECRET")
+    redis_url: str = Field(validation_alias="REDIS_URL")
+    kafka_bootstrap_servers: str = Field(validation_alias="KAFKA_BOOTSTRAP_SERVERS")
 
 
 settings = Settings()
