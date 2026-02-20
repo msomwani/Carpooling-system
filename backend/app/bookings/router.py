@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.common.db import SessionLocal
 from app.bookings.service import BookingService
-from app.bookings.schemas import BookingCreateRequest, BookingResponse
+from app.bookings.schemas import BookingCreateRequest, BookingResponse, BookingHistoryResponse
 from app.auth.dependencies import get_current_user_id
 from app.bookings.cancel_service import CancellationService
+from app.bookings.history_model import BookingHistory
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +100,29 @@ def cancel_booking(
             extra={"correlation_id": correlation_id},
         )
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/history", response_model=list[BookingHistoryResponse])
+def get_booking_history(
+    limit: int = 20,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(BookingHistory)
+        .filter(BookingHistory.user_id == user_id)
+        .order_by(BookingHistory.occurred_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        BookingHistoryResponse(
+            event_id=row.event_id,
+            booking_id=row.booking_id,
+            ride_id=row.ride_id,
+            action=row.action,
+            occurred_at=row.occurred_at,
+            correlation_id=row.correlation_id,
+        )
+        for row in rows
+    ]
