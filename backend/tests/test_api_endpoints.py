@@ -2,6 +2,12 @@ import pytest
 from uuid import uuid4
 from datetime import datetime, timedelta
 
+from app.auth.security import create_access_token
+from app.bookings.history_model import BookingHistory
+from app.bookings.models import Booking
+from app.rides.models import Ride
+from app.users.models import User
+
 
 class TestAPIEndpoints:
     """Test API endpoints for correct HTTP responses."""
@@ -123,3 +129,77 @@ class TestAPIEndpoints:
         })
         
         assert response.status_code == 401
+
+    def test_analytics_overview_endpoint(self, client):
+        """Test analytics overview endpoint."""
+        response = client.get("/analytics/overview")
+        assert response.status_code == 200
+        data = response.json()
+        assert "total_bookings" in data
+        assert "cancellation_rate" in data
+        assert "seat_utilization" in data
+        assert "popular_routes" in data
+
+    def test_booking_history_endpoint(self, client, db):
+        """Test booking history endpoint returns projected events."""
+        driver = User(
+            id=uuid4(),
+            name="History Driver",
+            email=f"history_driver_{uuid4()}@test.com",
+            password_hash="hashed",
+            role="driver",
+        )
+        passenger = User(
+            id=uuid4(),
+            name="History Passenger",
+            email=f"history_passenger_{uuid4()}@test.com",
+            password_hash="hashed",
+            role="passenger",
+        )
+        db.add(driver)
+        db.add(passenger)
+        db.flush()
+
+        ride = Ride(
+            id=uuid4(),
+            driver_id=driver.id,
+            source="HCity A",
+            destination="HCity B",
+            departure_time=datetime.now() + timedelta(hours=3),
+            total_seats=3,
+            available_seats=2,
+        )
+        db.add(ride)
+        db.flush()
+
+        booking = Booking(
+            id=uuid4(),
+            ride_id=ride.id,
+            passenger_id=passenger.id,
+            seats_booked=1,
+            status="CONFIRMED",
+        )
+        db.add(booking)
+        db.flush()
+
+        history_row = BookingHistory(
+            event_id=uuid4(),
+            user_id=passenger.id,
+            booking_id=booking.id,
+            ride_id=ride.id,
+            action="BOOKING_CONFIRMED",
+            correlation_id="history-test-corr",
+            details={"seats_booked": 1},
+        )
+        db.add(history_row)
+        db.commit()
+
+        token = create_access_token(subject=str(passenger.id))
+        client.cookies.set("access_token", token)
+
+        response = client.get("/bookings/history")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["action"] == "BOOKING_CONFIRMED"

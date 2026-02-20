@@ -9,7 +9,10 @@ from app.main import app
 from app.users.models import User
 from app.rides.models import Ride
 from app.bookings.models import Booking
+from app.bookings.history_model import BookingHistory
 from app.bookings.idempotency_model import BookingIdempotency
+from app.events.models import ProcessedEvent
+from app.notifications.models import NotificationAttempt
 from app.outbox.models import OutboxEvent
 
 # Test database URL - make sure this database exists
