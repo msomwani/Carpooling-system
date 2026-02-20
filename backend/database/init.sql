@@ -64,3 +64,39 @@ CREATE TABLE outbox_events (
     processed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+-- Consumer idempotency tracking
+CREATE TABLE processed_events (
+    event_id UUID NOT NULL,
+    consumer_name VARCHAR(100) NOT NULL,
+    processed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (event_id, consumer_name)
+);
+
+-- Notification delivery audit
+CREATE TABLE notification_attempts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL,
+    channel VARCHAR(30) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    error TEXT,
+    processed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_notification_attempts_event_id ON notification_attempts(event_id);
+
+-- Event-driven booking history projection
+CREATE TABLE booking_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL UNIQUE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+    ride_id UUID NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
+    action VARCHAR(50) NOT NULL,
+    occurred_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    correlation_id VARCHAR(100),
+    metadata JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_booking_history_user_id ON booking_history(user_id);
+CREATE INDEX idx_booking_history_occurred_at ON booking_history(occurred_at);
