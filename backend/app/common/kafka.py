@@ -18,10 +18,11 @@ def delivery_report(err, msg):
         print(f"✅ Delivered to {msg.topic()} [{msg.partition()}]")
 
 
-def publish_event(topic: str, payload: dict):
+def publish_event(topic: str, payload: dict, key: str | None = None):
     try:
         producer.produce(
             topic=topic,
+            key=key,
             value=json.dumps(payload),
             callback=delivery_report,
         )
