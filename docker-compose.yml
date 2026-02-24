@@ -2,16 +2,16 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: carpooling
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-carpooling}
+      POSTGRES_USER: ${POSTGRES_USER:-carpool_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d carpooling"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 15
@@ -59,10 +59,10 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/carpooling
-      JWT_SECRET: dev-secret-change-me
-      REDIS_URL: redis://redis:6379/0
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-carpool_user}:${POSTGRES_PASSWORD:-change_me_postgres}@postgres:5432/${POSTGRES_DB:-carpooling}
+      JWT_SECRET: ${JWT_SECRET:-change_me_jwt_secret}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
     depends_on:
       postgres:
         condition: service_healthy
