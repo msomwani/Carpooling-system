@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.common.logging_config import setup_logging
@@ -12,10 +13,18 @@ from app.auth.router import router as auth_router
 from app.rides.router import router as rides_router
 from app.bookings.router import router as booking_router
 from app.analytics.router import router as analytics_router
+from app.config.settings import settings
 
 setup_logging()
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=settings.cors_allow_methods,
+    allow_headers=settings.cors_allow_headers,
+)
 app.middleware("http")(correlation_middleware)
 
 app.include_router(auth_router)
