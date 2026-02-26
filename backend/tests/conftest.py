@@ -1,3 +1,4 @@
+import os
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -14,9 +15,13 @@ from app.bookings.idempotency_model import BookingIdempotency
 from app.events.models import ProcessedEvent
 from app.notifications.models import NotificationAttempt
 from app.outbox.models import OutboxEvent
+from app.config.settings import settings
 
 # Test database URL - make sure this database exists
-TEST_DATABASE_URL = "postgresql://mayanksomwani@localhost:5432/carpooling"
+# Priority:
+# 1) TEST_DATABASE_URL env var (optional override)
+# 2) DATABASE_URL from .env via app settings
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", settings.database_url)
 
 # Create test engine
 test_engine = create_engine(TEST_DATABASE_URL)

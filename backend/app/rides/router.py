@@ -64,10 +64,10 @@ def search_rides(
 
     cached = redis_client.get(cache_key)
     if cached:
-        print("🚀 REDIS CACHE HIT")
+        # print("🚀 REDIS CACHE HIT")
         return json.loads(cached)
-    print("🗄️ DB HIT")
-    
+    # print("🗄️ DB HIT")
+
     rides = db.query(Ride).filter(
         Ride.source == source,
         Ride.destination == destination,
