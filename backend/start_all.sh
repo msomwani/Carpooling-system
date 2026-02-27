@@ -51,8 +51,8 @@ fi
 POSTGRES_HOST="${POSTGRES_HOST:-127.0.0.1}"
 export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}"
 export REDIS_URL="redis://127.0.0.1:6379/0"
-export KAFKA_BOOTSTRAP_SERVERS="127.0.0.1:29092"
-log "Using DB host ${POSTGRES_HOST}, Redis 127.0.0.1:6379, Kafka 127.0.0.1:29092"
+export KAFKA_BOOTSTRAP_SERVERS="127.0.0.1:9092"
+log "Using DB host ${POSTGRES_HOST}, Redis 127.0.0.1:6379, Kafka 127.0.0.1:9092"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required but not installed." >&2

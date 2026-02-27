@@ -263,29 +263,36 @@ Reliability:
 
 ## Local Setup
 
-### 1) Start infrastructure
+### 1) Start full stack (infra + backend services)
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-Starts PostgreSQL, Redis, Kafka, and Zookeeper.
+Starts PostgreSQL, Redis, Zookeeper, Kafka, API server, outbox worker, and booking consumer.
 
-### 2) Run API
+### 2) Verify services
 
 ```bash
-cd backend
-uvicorn app.main:app --reload
+docker compose ps
+docker compose logs -f app outbox_worker booking_consumer
 ```
 
 Open API docs at `http://127.0.0.1:8000/docs`.
 
-### 3) Run workers
+### 3) Stop stack
+
+```bash
+docker compose down
+```
+
+### 4) Optional fallback (legacy local runner)
+
+If needed, you can still run the old local script:
 
 ```bash
 cd backend
-python app/workers/outbox_processor.py
-python app/workers/booking_consumer.py
+./start_all.sh
 ```
 
 ## System Workflow
