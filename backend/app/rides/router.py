@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+import json
 
 from app.common.db import SessionLocal
 from app.rides.schemas import RideCreateRequest, RideResponse
 from app.rides.service import RideService
 from app.rides.models import Ride
 from app.auth.dependencies import get_current_user_id
-import json
 from app.common.redis import redis_client
 
 
@@ -37,21 +36,6 @@ def create_ride(
         return ride
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    
-
-# @router.get("/", response_model=List[RideResponse])
-# def search_rides(
-#     source: str,
-#     destination: str,
-#     db: Session = Depends(get_db),
-# ):
-#     rides = db.query(Ride).filter(
-#         Ride.source == source,
-#         Ride.destination == destination,
-#         Ride.available_seats > 0
-#     ).all()
-
-#     return rides
 
 
 @router.get("/", response_model=list[RideResponse])
@@ -78,7 +62,11 @@ def search_rides(
         RideResponse(
             id=r.id,
             source=r.source,
+            source_lat=r.source_lat,
+            source_lng=r.source_lng,
             destination=r.destination,
+            destination_lat=r.destination_lat,
+            destination_lng=r.destination_lng,
             departure_time=r.departure_time,
             available_seats=r.available_seats,
         )

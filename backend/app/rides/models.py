@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey
+from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
@@ -13,7 +13,13 @@ class Ride(Base):
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     source = Column(String(255), nullable=False)
+    source_lat = Column(Float, nullable=True)
+    source_lng = Column(Float, nullable=True)
+
     destination = Column(String(255), nullable=False)
+    destination_lat = Column(Float, nullable=True)
+    destination_lng = Column(Float, nullable=True)
+
     departure_time = Column(DateTime(timezone=True), nullable=False)
 
     total_seats = Column(Integer, nullable=False)
