@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(validation_alias="JWT_SECRET")
     redis_url: str = Field(validation_alias="REDIS_URL")
     kafka_bootstrap_servers: str = Field(validation_alias="KAFKA_BOOTSTRAP_SERVERS")
+    google_maps_api_key: str = Field(default="", validation_alias="GOOGLE_MAPS_API_KEY")
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",
