@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 import json
 
@@ -38,6 +38,34 @@ def create_ride(
         raise HTTPException(status_code=403, detail=str(e))
 
 
+@router.get("/nearby", response_model=list[RideResponse])
+def search_rides_nearby(
+    lat: float = Query(..., ge=-90, le=90, description="Latitude"),
+    lng: float = Query(..., ge=-180, le=180, description="Longitude"),
+    radius_km: float = Query(10.0, gt=0, le=500, description="Search radius in km"),
+    role: str = Query("source", pattern="^(source|destination)$", description="Match source or destination"),
+    db: Session = Depends(get_db),
+):
+    """Find rides whose source or destination is within *radius_km* of (lat, lng)."""
+    rides = RideService.search_nearby(
+        db, lat=lat, lng=lng, radius_km=radius_km, role=role
+    )
+    return [
+        RideResponse(
+            id=r.id,
+            source=r.source,
+            source_lat=r.source_lat,
+            source_lng=r.source_lng,
+            destination=r.destination,
+            destination_lat=r.destination_lat,
+            destination_lng=r.destination_lng,
+            departure_time=r.departure_time,
+            available_seats=r.available_seats,
+        )
+        for r in rides
+    ]
+
+
 @router.get("/", response_model=list[RideResponse])
 def search_rides(
     source: str,
@@ -48,9 +76,7 @@ def search_rides(
 
     cached = redis_client.get(cache_key)
     if cached:
-        # print("🚀 REDIS CACHE HIT")
         return json.loads(cached)
-    # print("🗄️ DB HIT")
 
     rides = db.query(Ride).filter(
         Ride.source == source,

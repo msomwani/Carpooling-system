@@ -1,5 +1,8 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.common.logging_config import setup_logging
@@ -13,6 +16,7 @@ from app.auth.router import router as auth_router
 from app.rides.router import router as rides_router
 from app.bookings.router import router as booking_router
 from app.analytics.router import router as analytics_router
+from app.maps.router import router as maps_router
 from app.config.settings import settings
 
 setup_logging()
@@ -31,6 +35,12 @@ app.include_router(auth_router)
 app.include_router(booking_router)
 app.include_router(rides_router)
 app.include_router(analytics_router)
+app.include_router(maps_router)
+
+# Serve static frontend files (maps.html, etc.)
+_static_dir = Path(__file__).resolve().parent / "static"
+_static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 @app.get("/healthz")
 def health_check():
