@@ -33,12 +33,14 @@ Existing mobility options are available, but this project targets a route-specif
 - Redis caching for ride search
 - Kafka with Outbox pattern for reliable async events
 - JWT authentication with HTTP-only cookie sessions
+- Google Maps integration for coordinate-based ride creation and geo-search
 
 ### Business Flows
 
 - user signup and login
 - driver ride creation
-- rider ride search
+- rider ride search (text-based and geo-based nearby search)
+- coordinate-based ride creation via Google Maps
 - booking creation
 - booking cancellation
 - booking history endpoint
@@ -162,8 +164,10 @@ Authentication is handled through HTTP-only cookie-based JWT sessions.
 app/
 ├── auth/        -> authentication and JWT
 ├── users/       -> user management
-├── rides/       -> ride creation and search
+├── rides/       -> ride creation, text search, and geo-based nearby search
 ├── bookings/    -> booking lifecycle and idempotency
+├── maps/        -> Google Maps API key endpoint
+├── static/      -> frontend UI (maps.html)
 ├── outbox/      -> durable event storage
 ├── events/      -> consumer idempotency tracking
 ├── notifications/ -> notification attempt tracking
@@ -188,10 +192,18 @@ workers/
 
 ### Ride Management
 
-- drivers create rides
-- passengers search rides
-- indexed DB queries
+- drivers create rides with optional GPS coordinates
+- passengers search rides by text or by geo-proximity (Haversine)
+- indexed DB queries (text + coordinate indexes)
 - Redis-backed caching
+
+### Google Maps Integration
+
+- Interactive map UI for picking source/destination coordinates
+- Google Places Autocomplete for location search
+- `GET /rides/nearby` geo-search using Haversine distance formula
+- API key served securely from backend config
+- Dark-themed map interface at `/static/maps.html`
 
 ### Transaction-Safe Booking
 
@@ -248,8 +260,13 @@ Reliability:
 
 ### Rides
 
-- `POST /rides/`
+- `POST /rides/` (supports optional `source_lat`, `source_lng`, `destination_lat`, `destination_lng`)
 - `GET /rides/?source=...&destination=...`
+- `GET /rides/nearby?lat=...&lng=...&radius_km=10&role=source` (geo-search)
+
+### Maps
+
+- `GET /maps/api-key` (returns Google Maps API key for frontend)
 
 ### Bookings
 
@@ -262,6 +279,15 @@ Reliability:
 - `GET /analytics/overview?days=30`
 
 ## Local Setup
+
+### 0) Configure Google Maps API key
+
+Add your Google Maps API key to both `.env` files:
+
+- `backend/.env` → set `GOOGLE_MAPS_API_KEY=your_key`
+- Root `.env` → set `GOOGLE_MAPS_API_KEY=your_key`
+
+Required Google Cloud APIs: **Maps JavaScript API**, **Places API**.
 
 ### 1) Start full stack (infra + backend services)
 
@@ -278,7 +304,8 @@ docker compose ps
 docker compose logs -f app outbox_worker booking_consumer
 ```
 
-Open API docs at `http://127.0.0.1:8000/docs`.
+- API docs: `http://127.0.0.1:8000/docs`
+- Map UI: `http://127.0.0.1:8000/static/maps.html`
 
 ### 3) Stop stack
 
@@ -317,6 +344,7 @@ cd backend
 - Database: PostgreSQL
 - Cache: Redis
 - Event Streaming: Kafka
+- Maps: Google Maps JavaScript API + Places API
 - Pattern: Modular Monolith + Outbox Pattern
 
 ## Why This Project
