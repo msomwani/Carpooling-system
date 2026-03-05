@@ -32,64 +32,71 @@ class TestAPIEndpoints:
         data = response.json()
         assert isinstance(data, dict)
     
-    def test_signup_endpoint(self, client, db):
-        """Test user signup endpoint."""
+    def test_signup_endpoint(self, client):
+        """Test user signup returns 201 and prompts for OTP verification."""
         response = client.post("/auth/signup", json={
             "name": "Test User",
             "email": f"testuser_{uuid4()}@test.com",
             "password": "securepassword123",
             "role": "passenger"
         })
-        
-        assert response.status_code == 200
+
+        assert response.status_code == 201
         data = response.json()
-        # Check that user ID is returned
-        assert "id" in data
+        # New flow: returns message + email, not user ID
+        assert "message" in data
+        assert "email" in data
     
     def test_login_endpoint(self, client, db):
-        """Test user login endpoint."""
+        """Test login works after email is verified."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
         email = f"logintest_{uuid4()}@test.com"
         password = "testpassword123"
-        
-        # First signup
-        client.post("/auth/signup", json={
-            "name": "Login Test",
-            "email": email,
-            "password": password,
-            "role": "passenger"
-        })
-        
-        # Then login
-        response = client.post("/auth/login", json={
-            "email": email,
-            "password": password
-        })
-        
+
+        # Create a pre-verified user directly in the DB (bypasses OTP flow)
+        user = UserModel(
+            id=uuid4(),
+            name="Login Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        # Login should succeed
+        response = client.post("/auth/login", json={"email": email, "password": password})
         assert response.status_code == 200
-        # Cookie-based auth, so check for cookie or success message
-        assert response.cookies or response.json().get("message") == "Logged in"
+        assert response.json().get("message") == "Logged in"
     
     def test_create_ride_as_driver(self, client, db):
-        """Test creating a ride as a driver."""
-        # Signup as driver
-        email = f"driver_{uuid4()}@test.com"
-        signup_response = client.post("/auth/signup", json={
-            "name": "Test Driver",
-            "email": email,
-            "password": "driverpass123",
-            "role": "driver"
-        })
-        assert signup_response.status_code == 200
+        """Test creating a ride as a driver (pre-verified account)."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
 
-        # Login to set auth cookie
-        login_response = client.post("/auth/login", json={
-            "email": email,
-            "password": "driverpass123"
-        })
+        email = f"driver_{uuid4()}@test.com"
+        password = "driverpass123"
+
+        # Create pre-verified driver directly in DB
+        driver = UserModel(
+            id=uuid4(),
+            name="Test Driver",
+            email=email,
+            password_hash=hash_password(password),
+            role="driver",
+            is_email_verified=True,
+        )
+        db.add(driver)
+        db.commit()
+
+        # Login
+        login_response = client.post("/auth/login", json={"email": email, "password": password})
         assert login_response.status_code == 200
-        
-        # Cookies are automatically handled by TestClient
-        # Create ride (cookie auth happens automatically)
+
+        # Create ride
         response = client.post(
             "/rides/",
             json={
@@ -99,13 +106,79 @@ class TestAPIEndpoints:
                 "total_seats": 4
             }
         )
-        
         assert response.status_code == 200
         data = response.json()
         assert data["source"] == "City A"
         assert data["destination"] == "City B"
         assert data["available_seats"] == 4
-    
+
+    def test_verify_otp_endpoint(self, client, db):
+        """Test that OTP verification marks email as verified and logs in."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"otptest_{uuid4()}@test.com"
+        # Create unverified user with known OTP
+        from datetime import timezone as tz
+        user = UserModel(
+            id=uuid4(),
+            name="OTP Test",
+            email=email,
+            password_hash=hash_password("pass123"),
+            role="passenger",
+            is_email_verified=False,
+            otp_code="123456",
+            otp_expires_at=datetime.now(tz.utc) + timedelta(minutes=10),
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post("/auth/verify-otp", json={"email": email, "otp": "123456"})
+        assert response.status_code == 200
+        assert "verified" in response.json().get("message", "").lower()
+
+    def test_login_rejects_unverified_email(self, client, db):
+        """Test that login is rejected when email is not verified."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"unverified_{uuid4()}@test.com"
+        user = UserModel(
+            id=uuid4(),
+            name="Unverified User",
+            email=email,
+            password_hash=hash_password("pass123"),
+            role="passenger",
+            is_email_verified=False,
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post("/auth/login", json={"email": email, "password": "pass123"})
+        assert response.status_code == 403  # forbidden until verified
+
+    def test_resend_otp_endpoint(self, client, db):
+        """Test resend OTP sends a fresh code."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"resend_{uuid4()}@test.com"
+        user = UserModel(
+            id=uuid4(),
+            name="Resend Test",
+            email=email,
+            password_hash=hash_password("pass123"),
+            role="passenger",
+            is_email_verified=False,
+            otp_code="000000",
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post("/auth/resend-otp", json={"email": email})
+        assert response.status_code == 200
+        assert "sent" in response.json().get("message", "").lower()
+
     def test_search_rides(self, client, db):
         """Test ride search endpoint."""
         # Just test that endpoint works and returns a list
@@ -203,3 +276,93 @@ class TestAPIEndpoints:
         assert isinstance(data, list)
         assert len(data) == 1
         assert data[0]["action"] == "BOOKING_CONFIRMED"
+
+    def test_maps_api_key_endpoint(self, client):
+        """Test maps API key endpoint returns a key."""
+        response = client.get("/maps/api-key")
+        assert response.status_code == 200
+        data = response.json()
+        assert "api_key" in data
+        assert isinstance(data["api_key"], str)
+
+    def test_nearby_rides_returns_results(self, client, db):
+        """Test nearby ride search returns rides within radius."""
+        # Create driver + ride with coordinates
+        driver = User(
+            id=uuid4(),
+            name="Nearby Driver",
+            email=f"nearby_driver_{uuid4()}@test.com",
+            password_hash="hashed",
+            role="driver",
+        )
+        db.add(driver)
+        db.flush()
+
+        ride = Ride(
+            id=uuid4(),
+            driver_id=driver.id,
+            source="Vadodara Railway Station",
+            source_lat=22.3101,
+            source_lng=73.1810,
+            destination="Halol GIDC",
+            destination_lat=22.5100,
+            destination_lng=73.4600,
+            departure_time=datetime.now() + timedelta(hours=3),
+            total_seats=4,
+            available_seats=4,
+        )
+        db.add(ride)
+        db.commit()
+
+        # Search near Vadodara (should find the ride within 5km)
+        response = client.get(
+            "/rides/nearby?lat=22.3100&lng=73.1800&radius_km=5&role=source"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["source"] == "Vadodara Railway Station"
+
+    def test_nearby_rides_empty_when_out_of_range(self, client, db):
+        """Test nearby ride search returns empty when no rides in range."""
+        # Create driver + ride in Vadodara
+        driver = User(
+            id=uuid4(),
+            name="Far Driver",
+            email=f"far_driver_{uuid4()}@test.com",
+            password_hash="hashed",
+            role="driver",
+        )
+        db.add(driver)
+        db.flush()
+
+        ride = Ride(
+            id=uuid4(),
+            driver_id=driver.id,
+            source="Vadodara Railway Station",
+            source_lat=22.3101,
+            source_lng=73.1810,
+            destination="Halol GIDC",
+            destination_lat=22.5100,
+            destination_lng=73.4600,
+            departure_time=datetime.now() + timedelta(hours=3),
+            total_seats=4,
+            available_seats=4,
+        )
+        db.add(ride)
+        db.commit()
+
+        # Search near Mumbai (far away, should find nothing)
+        response = client.get(
+            "/rides/nearby?lat=19.0760&lng=72.8777&radius_km=10&role=source"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 0
+
+    def test_nearby_rides_missing_params(self, client):
+        """Test nearby ride search returns 422 when required params missing."""
+        response = client.get("/rides/nearby")
+        assert response.status_code == 422
