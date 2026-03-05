@@ -6,10 +6,13 @@ CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,                          -- nullable for Google OAuth users
     role VARCHAR(20) NOT NULL CHECK (role IN ('driver', 'passenger')),
     phone_number VARCHAR(20),
     phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    otp_code VARCHAR(6),
+    otp_expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

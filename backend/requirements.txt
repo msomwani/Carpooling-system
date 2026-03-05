@@ -12,6 +12,7 @@ dnspython==2.8.0
 ecdsa==0.19.1
 email-validator==2.3.0
 Faker==40.4.0
+google-auth==2.40.0
 fastapi==0.128.0
 h11==0.16.0
 httpcore==1.0.9
