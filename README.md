@@ -38,6 +38,8 @@ Existing mobility options are available, but this project targets a route-specif
 ### Business Flows
 
 - user signup and login
+- **email OTP verification** (AWS SES)
+- **Google OAuth (Sign in with Google)**
 - driver ride creation
 - rider ride search (text-based and geo-based nearby search)
 - coordinate-based ride creation via Google Maps
@@ -184,11 +186,13 @@ workers/
 
 ### Authentication
 
-- signup and login
+- signup with email OTP verification (does not log in until OTP is confirmed)
+- Google OAuth — Sign in with Google (auto-creates account, skips OTP)
 - password hashing
 - JWT-based sessions
 - HTTP-only cookies
 - protected endpoints via dependency injection
+- login rejected for unverified accounts
 
 ### Ride Management
 
@@ -255,8 +259,11 @@ Reliability:
 
 ### Auth
 
-- `POST /auth/signup`
-- `POST /auth/login`
+- `POST /auth/signup` (creates account, sends OTP email)
+- `POST /auth/verify-otp` (verifies OTP, sets JWT cookie)
+- `POST /auth/resend-otp` (resends OTP)
+- `POST /auth/login` (email+password, rejects unverified accounts)
+- `POST /auth/google` (Google ID token → login or auto-register)
 
 ### Rides
 
@@ -280,14 +287,21 @@ Reliability:
 
 ## Local Setup
 
-### 0) Configure Google Maps API key
+### 0) Configure environment variables
 
-Add your Google Maps API key to both `.env` files:
+Add the following to `backend/.env` (and root `.env` for docker-compose):
 
-- `backend/.env` → set `GOOGLE_MAPS_API_KEY=your_key`
-- Root `.env` → set `GOOGLE_MAPS_API_KEY=your_key`
+```env
+GOOGLE_MAPS_API_KEY=your_google_maps_key
+SMTP_SERVER=email-smtp.your-region.amazonaws.com
+SMTP_PORT=587
+SMTP_USERNAME=your_ses_smtp_username
+SMTP_PASSWORD=your_ses_smtp_password
+SMTP_FROM_EMAIL=noreply@yourdomain.com
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+```
 
-Required Google Cloud APIs: **Maps JavaScript API**, **Places API**.
+Required Google Cloud APIs: **Maps JavaScript API**, **Places API**, **Google Identity Services**.
 
 ### 1) Start full stack (infra + backend services)
 
@@ -345,6 +359,8 @@ cd backend
 - Cache: Redis
 - Event Streaming: Kafka
 - Maps: Google Maps JavaScript API + Places API
+- Email: AWS SES (SMTP)
+- Auth: JWT (HTTP-only cookies), Google OAuth 2.0
 - Pattern: Modular Monolith + Outbox Pattern
 
 ## Why This Project
