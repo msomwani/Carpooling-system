@@ -1,5 +1,6 @@
 import os
 import pytest
+from unittest.mock import patch
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
@@ -26,6 +27,13 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", settings.database_url)
 # Create test engine
 test_engine = create_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+
+@pytest.fixture(autouse=True)
+def mock_send_otp_email():
+    """Mock email sending for ALL tests — never hits real AWS SES."""
+    with patch("app.auth.service.send_otp_email") as mock:
+        yield mock
 
 
 @pytest.fixture(scope="function")
@@ -79,7 +87,8 @@ def sample_driver(db):
         password_hash="hashed_password",
         role="driver",
         phone_number="1234567890",
-        phone_verified=True
+        phone_verified=True,
+        is_email_verified=True,
     )
     db.add(driver)
     db.commit()
@@ -97,7 +106,8 @@ def sample_passenger(db):
         password_hash="hashed_password",
         role="passenger",
         phone_number="0987654321",
-        phone_verified=True
+        phone_verified=True,
+        is_email_verified=True,
     )
     db.add(passenger)
     db.commit()
@@ -135,13 +145,14 @@ def multiple_passengers(db):
             name=f"Passenger {i}",
             email=f"passenger_{i}_{uuid4()}@test.com",
             password_hash="hashed_password",
-            role="passenger"
+            role="passenger",
+            is_email_verified=True,
         )
         db.add(passenger)
         passengers.append(passenger)
-    
+
     db.commit()
     for p in passengers:
         db.refresh(p)
-    
+
     return passengers
