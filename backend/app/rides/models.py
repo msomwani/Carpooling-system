@@ -1,9 +1,16 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey
+from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
+import enum
 
 from app.common.db import Base
+
+
+class RideStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 class Ride(Base):
@@ -24,5 +31,12 @@ class Ride(Base):
 
     total_seats = Column(Integer, nullable=False)
     available_seats = Column(Integer, nullable=False)
+
+    status = Column(
+        SAEnum(RideStatus, name="ridestatus"),
+        nullable=False,
+        default=RideStatus.ACTIVE,
+        server_default=RideStatus.ACTIVE.value,
+    )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

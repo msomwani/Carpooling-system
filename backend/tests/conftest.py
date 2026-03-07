@@ -36,6 +36,15 @@ def mock_send_otp_email():
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def mock_redis():
+    """Mock Redis for ALL tests — never requires a live Redis connection."""
+    with patch("app.rides.router.redis_client") as mock:
+        mock.get.return_value = None   # always a cache miss
+        mock.setex.return_value = True
+        yield mock
+
+
 @pytest.fixture(scope="function")
 def db():
     """

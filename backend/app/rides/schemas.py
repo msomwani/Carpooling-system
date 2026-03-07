@@ -1,7 +1,8 @@
 from datetime import datetime
 from uuid import UUID
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
 class RideCreateRequest(BaseModel):
@@ -26,7 +27,10 @@ class RideCreateRequest(BaseModel):
 
 
 class RideResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
+    driver_id: UUID
     source: str
     source_lat: float | None = None
     source_lng: float | None = None
@@ -36,4 +40,6 @@ class RideResponse(BaseModel):
     destination_lng: float | None = None
 
     departure_time: datetime
+    total_seats: int
     available_seats: int
+    status: Literal["ACTIVE", "COMPLETED", "CANCELLED"] = "ACTIVE"

@@ -16,6 +16,9 @@ CREATE TABLE users (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Ride status enum
+CREATE TYPE ridestatus AS ENUM ('ACTIVE', 'COMPLETED', 'CANCELLED');
+
 -- Rides table
 CREATE TABLE rides (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
