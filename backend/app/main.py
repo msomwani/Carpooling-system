@@ -13,6 +13,7 @@ from app.common.kafka import producer
 from app.common.metrics import get_metrics
 
 from app.auth.router import router as auth_router
+from app.users.router import router as users_router
 from app.rides.router import router as rides_router
 from app.bookings.router import router as booking_router
 from app.analytics.router import router as analytics_router
@@ -32,6 +33,7 @@ app.add_middleware(
 app.middleware("http")(correlation_middleware)
 
 app.include_router(auth_router)
+app.include_router(users_router)
 app.include_router(booking_router)
 app.include_router(rides_router)
 app.include_router(analytics_router)

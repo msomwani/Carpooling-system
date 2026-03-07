@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func, cast, Float
-from app.rides.models import Ride
+from app.rides.models import Ride, RideStatus
 from app.users.models import User
 
 # Earth radius in kilometres (mean)
@@ -22,12 +22,8 @@ class RideService:
         destination_lng: float | None = None,
         departure_time=None,
         total_seats: int,
-    ):
-        # Ensure user is a driver
-        driver = db.query(User).filter(User.id == driver_id).first()
-        if not driver or driver.role != "driver":
-            raise ValueError("Only drivers can create rides")
-
+    ) -> Ride:
+        # Any authenticated user can create a ride — role is a preference, not a gate
         ride = Ride(
             driver_id=driver_id,
             source=source,
@@ -39,9 +35,40 @@ class RideService:
             departure_time=departure_time,
             total_seats=total_seats,
             available_seats=total_seats,
+            status=RideStatus.ACTIVE,
         )
 
         db.add(ride)
+        db.commit()
+        db.refresh(ride)
+        return ride
+
+    @staticmethod
+    def _get_ride_owned_by(db: Session, ride_id: str, driver_id: str) -> Ride:
+        """Fetch an ACTIVE ride that belongs to the given driver, or raise."""
+        ride = db.query(Ride).filter(Ride.id == ride_id).first()
+        if not ride:
+            raise ValueError("Ride not found")
+        if str(ride.driver_id) != str(driver_id):
+            raise PermissionError("You are not the driver of this ride")
+        if ride.status != RideStatus.ACTIVE:
+            raise ValueError(f"Ride is already {ride.status.value}")
+        return ride
+
+    @staticmethod
+    def complete_ride(db: Session, *, ride_id: str, driver_id: str) -> Ride:
+        """Mark a ride as COMPLETED. Only the owning driver can do this."""
+        ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
+        ride.status = RideStatus.COMPLETED
+        db.commit()
+        db.refresh(ride)
+        return ride
+
+    @staticmethod
+    def cancel_ride(db: Session, *, ride_id: str, driver_id: str) -> Ride:
+        """Cancel a ride. Only the owning driver can do this."""
+        ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
+        ride.status = RideStatus.CANCELLED
         db.commit()
         db.refresh(ride)
         return ride
@@ -56,7 +83,7 @@ class RideService:
         role: str = "source",
     ) -> list[Ride]:
         """
-        Find rides whose source or destination coordinates fall within
+        Find ACTIVE rides whose source or destination coordinates fall within
         *radius_km* of the given (lat, lng) using the Haversine formula.
         """
         if role == "source":
@@ -87,8 +114,8 @@ class RideService:
                 lat_col.isnot(None),
                 lng_col.isnot(None),
                 Ride.available_seats > 0,
+                Ride.status == RideStatus.ACTIVE,   # ← only ACTIVE rides
                 distance <= radius_km,
             )
             .all()
         )
-

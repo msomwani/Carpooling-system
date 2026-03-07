@@ -91,6 +91,11 @@ class BookingService:
                 .one()
             )
 
+            # 🚫 Drivers cannot book their own ride
+            if str(ride.driver_id) == str(passenger_id):
+                increment("booking_failure_total")
+                raise ValueError("Drivers cannot book their own ride")
+
             # 3️⃣ Check for existing CONFIRMED booking to prevent duplicates
             existing_confirmed_booking = (
                 db.query(Booking)

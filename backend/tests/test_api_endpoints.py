@@ -187,7 +187,51 @@ class TestAPIEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-    
+
+    def test_complete_ride(self, client, db, sample_ride, sample_driver):
+        """Test driver can mark their own ride as COMPLETED."""
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_driver.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(f"/rides/{sample_ride.id}/complete")
+        assert response.status_code == 200
+        assert response.json()["status"] == "COMPLETED"
+
+    def test_cancel_ride(self, client, db, sample_ride, sample_driver):
+        """Test driver can cancel their own ride."""
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_driver.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(f"/rides/{sample_ride.id}/cancel")
+        assert response.status_code == 200
+        assert response.json()["status"] == "CANCELLED"
+
+    def test_cancel_ride_wrong_driver(self, client, db, sample_ride, sample_passenger):
+        """Test that a non-owner cannot cancel someone else's ride."""
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_passenger.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(f"/rides/{sample_ride.id}/cancel")
+        assert response.status_code == 403
+
+    def test_driver_cannot_book_own_ride(self, client, db, sample_ride, sample_driver):
+        """Test that a driver cannot book their own ride."""
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_driver.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(
+            "/bookings/",
+            headers={"Idempotency-Key": "driver-self-book-test"},
+            json={"ride_id": str(sample_ride.id), "seats": 1},
+        )
+        # Should be rejected — driver cannot book own ride
+        assert response.status_code == 400
+        assert "own ride" in response.json().get("detail", "").lower()
+
     def test_unauthorized_access_fails(self, client):
         """Test that endpoints require authentication."""
         # Clear any cookies first
@@ -212,6 +256,26 @@ class TestAPIEndpoints:
         assert "cancellation_rate" in data
         assert "seat_utilization" in data
         assert "popular_routes" in data
+
+    def test_update_user_role(self, client, db, sample_passenger):
+        """Test a user can change their active profile role."""
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_passenger.id))
+        client.cookies.set("access_token", token)
+        
+        # Current role is "passenger", change to "driver"
+        response = client.patch(
+            "/users/me/role",
+            json={"role": "driver"}
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "driver"
+        
+        # Verify in DB (expire cache first since API used a different DB session)
+        db.expire_all()
+        from app.users.models import User
+        user_in_db = db.query(User).filter(User.id == sample_passenger.id).first()
+        assert user_in_db.role == "driver"
 
     def test_booking_history_endpoint(self, client, db):
         """Test booking history endpoint returns projected events."""
