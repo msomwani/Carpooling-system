@@ -1,19 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.common.db import SessionLocal
+from app.common.db import get_db
 from app.users.models import User
 from app.users.schemas import RoleUpdateRequest
 from app.auth.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 @router.patch("/me/role")
 def update_my_role(

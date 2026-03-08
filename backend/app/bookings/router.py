@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.common.db import SessionLocal
+from app.common.db import get_db
 from app.bookings.service import BookingService
 from app.bookings.schemas import BookingCreateRequest, BookingResponse, BookingHistoryResponse
 from app.auth.dependencies import get_current_user_id
@@ -14,12 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 
 @router.post("/", response_model=BookingResponse)

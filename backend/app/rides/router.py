@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 import json
 
-from app.common.db import SessionLocal
+from app.common.db import get_db
 from app.rides.schemas import RideCreateRequest, RideResponse
 from app.rides.service import RideService
 from app.rides.models import Ride, RideStatus
@@ -13,12 +13,7 @@ from app.common.redis import redis_client
 router = APIRouter(prefix="/rides", tags=["Rides"])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 
 @router.post("/", response_model=RideResponse)

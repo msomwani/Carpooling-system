@@ -5,18 +5,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.bookings.models import Booking
-from app.common.db import SessionLocal
+from app.common.db import get_db
 from app.rides.models import Ride
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 
 @router.get("/overview")

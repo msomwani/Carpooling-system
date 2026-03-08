@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
-from app.common.db import SessionLocal
+from app.common.db import get_db
 from app.auth.schemas import (
     SignupRequest,
     LoginRequest,
@@ -15,12 +15,7 @@ from app.auth.security import create_access_token
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
 
 
 def _set_auth_cookie(response: Response, user_id: str) -> None:
