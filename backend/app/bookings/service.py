@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.rides.models import Ride
+from app.rides.service import RideService
 from app.bookings.models import Booking
 from app.bookings.idempotency_model import BookingIdempotency
 from app.outbox.models import OutboxEvent
@@ -103,6 +104,13 @@ class BookingService:
                 if ride.departure_time < now:
                     increment("booking_failure_total")
                     raise ValueError("Cannot book a ride that has already departed")
+
+                # 🚫 Check for overlapping schedules (double-booking)
+                try:
+                    RideService._check_overlapping_rides(db, passenger_id, ride.departure_time)
+                except ValueError as e:
+                    increment("booking_failure_total")
+                    raise ValueError(str(e))
 
             # 3️⃣ Check for existing CONFIRMED booking to prevent duplicates
             existing_confirmed_booking = (

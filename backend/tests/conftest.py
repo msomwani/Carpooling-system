@@ -20,9 +20,11 @@ from app.config.settings import settings
 
 # Test database URL - make sure this database exists
 # Priority:
+# Priority:
 # 1) TEST_DATABASE_URL env var (optional override)
-# 2) DATABASE_URL from .env via app settings
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", settings.database_url)
+# 2) Fallback to postgres test DB
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "postgresql+psycopg2://carpool_user_admin:testpassword@localhost:5433/carpooling_test_db")
+settings.database_url = TEST_DATABASE_URL
 
 # Create test engine
 test_engine = create_engine(TEST_DATABASE_URL)
@@ -39,7 +41,7 @@ def mock_send_otp_email():
 @pytest.fixture(autouse=True)
 def mock_redis():
     """Mock Redis for ALL tests — never requires a live Redis connection."""
-    with patch("app.rides.router.redis_client") as mock:
+    with patch("app.rides.service.redis_client") as mock:
         mock.get.return_value = None   # always a cache miss
         mock.setex.return_value = True
         yield mock
@@ -127,14 +129,14 @@ def sample_passenger(db):
 @pytest.fixture
 def sample_ride(db, sample_driver):
     """Create a sample ride for testing."""
-    from datetime import datetime, timedelta
-    
+    from datetime import datetime, timedelta, timezone
+
     ride = Ride(
         id=uuid4(),
         driver_id=sample_driver.id,
         source="Test Source",
         destination="Test Destination",
-        departure_time=datetime.now() + timedelta(hours=2),
+        departure_time=datetime.now(timezone.utc) + timedelta(hours=2),
         total_seats=4,
         available_seats=4
     )
