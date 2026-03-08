@@ -97,12 +97,14 @@ class TestAPIEndpoints:
         assert login_response.status_code == 200
 
         # Create ride
+        from datetime import timezone
+        future_time = datetime.now(timezone.utc) + timedelta(hours=5)
         response = client.post(
             "/rides/",
             json={
                 "source": "City A",
                 "destination": "City B",
-                "departure_time": (datetime.now() + timedelta(hours=5)).isoformat(),
+                "departure_time": future_time.isoformat(),
                 "total_seats": 4
             }
         )
@@ -111,6 +113,32 @@ class TestAPIEndpoints:
         assert data["source"] == "City A"
         assert data["destination"] == "City B"
         assert data["available_seats"] == 4
+
+        # Test double-booking prevention for drivers
+        response_overlap = client.post(
+            "/rides/",
+            json={
+                "source": "City C",
+                "destination": "City D",
+                "departure_time": (future_time + timedelta(hours=1)).isoformat(), # Within 2 hours
+                "total_seats": 4
+            }
+        )
+        assert response_overlap.status_code == 403
+        assert "within 2 hours" in response_overlap.json()["detail"].lower()
+
+        # Test temporal validation (past ride)
+        response_past = client.post(
+            "/rides/",
+            json={
+                "source": "City E",
+                "destination": "City F",
+                "departure_time": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+                "total_seats": 4
+            }
+        )
+        assert response_past.status_code == 403
+        assert "past" in response_past.json()["detail"].lower()
 
     def test_verify_otp_endpoint(self, client, db):
         """Test that OTP verification marks email as verified and logs in."""
@@ -194,12 +222,17 @@ class TestAPIEndpoints:
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
 
+        # Update ride to be in the past so it can be completed
+        from datetime import datetime, timedelta, timezone
+        sample_ride.departure_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        db.commit()
+
         response = client.post(f"/rides/{sample_ride.id}/complete")
         assert response.status_code == 200
         assert response.json()["status"] == "COMPLETED"
 
     def test_cancel_ride(self, client, db, sample_ride, sample_driver):
-        """Test driver can cancel their own ride."""
+        """Test driver can cancel their own ride without passengers anytime."""
         from app.auth.security import create_access_token
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
@@ -207,7 +240,115 @@ class TestAPIEndpoints:
         response = client.post(f"/rides/{sample_ride.id}/cancel")
         assert response.status_code == 200
         assert response.json()["status"] == "CANCELLED"
+        
+        # Verify driver refund event was emitted
+        from app.outbox.models import OutboxEvent
+        driver_refund_event = db.query(OutboxEvent).filter(
+            OutboxEvent.event_type == "ride.cancelled_by_driver_refund",
+            OutboxEvent.payload.op("->>")("ride_id") == str(sample_ride.id)
+        ).first()
+        
+        assert driver_refund_event is not None
+        assert driver_refund_event.payload["driver_id"] == str(sample_driver.id)
 
+    def test_cancel_ride_with_passengers_late_fails(self, client, db, sample_ride, sample_driver, sample_passenger):
+        """Test driver cannot cancel late if they have passengers."""
+        # 1. Book the ride for the passenger
+        booking = Booking(
+            id=uuid4(),
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_booked=1,
+            status="CONFIRMED"
+        )
+        db.add(booking)
+        
+        # 2. Make the departure time exactly 1 hour from now (late cancellation)
+        from datetime import datetime, timezone, timedelta
+        sample_ride.departure_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.commit()
+
+        # 3. Attempt driver cancellation
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_driver.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(f"/rides/{sample_ride.id}/cancel")
+        assert response.status_code == 400
+        assert "within 1.5 hours" in response.json()["detail"].lower()
+
+    def test_cancel_ride_with_passengers_early_succeeds(self, client, db, sample_ride, sample_driver, sample_passenger):
+        """Test driver can cancel early with passengers, but loses money."""
+        # 1. Book the ride
+        booking = Booking(
+            id=uuid4(),
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_booked=1,
+            status="CONFIRMED"
+        )
+        db.add(booking)
+        
+        # 2. Make the departure time exactly 2 hours from now (early cancellation)
+        from datetime import datetime, timezone, timedelta
+        sample_ride.departure_time = datetime.now(timezone.utc) + timedelta(hours=2)
+        db.commit()
+
+        # 3. Attempt driver cancellation
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_driver.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(f"/rides/{sample_ride.id}/cancel")
+        assert response.status_code == 200
+        
+        # 4. Verify cascade cancellation for the booking
+        db.refresh(booking)
+        assert booking.status == "CANCELLED"
+        
+        # 5. Verify passenger refund outbox event
+        from app.outbox.models import OutboxEvent
+        passenger_refund_event = db.query(OutboxEvent).filter(
+            OutboxEvent.event_type == "booking.cancelled_by_driver",
+            OutboxEvent.payload.op("->>")("booking_id") == str(booking.id)
+        ).first()
+        
+        assert passenger_refund_event is not None
+        assert passenger_refund_event.payload["passenger_id"] == str(sample_passenger.id)
+
+        # 6. Verify driver did NOT get a refund
+        driver_refund_event = db.query(OutboxEvent).filter(
+            OutboxEvent.event_type == "ride.cancelled_by_driver_refund",
+            OutboxEvent.payload.op("->>")("ride_id") == str(sample_ride.id)
+        ).first()
+        assert driver_refund_event is None
+
+    def test_passenger_cannot_cancel_past_ride(self, client, db, sample_ride, sample_passenger):
+        """Test passenger cannot cancel a ride after it has departed."""
+        # 1. Book the ride
+        booking = Booking(
+            id=uuid4(),
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_booked=1,
+            status="CONFIRMED"
+        )
+        db.add(booking)
+        
+        # 2. Make the departure time in the past
+        from datetime import datetime, timezone, timedelta
+        sample_ride.departure_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        db.commit()
+
+        # 3. Attempt passenger cancellation
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_passenger.id))
+        client.cookies.set("access_token", token)
+
+        response = client.post(f"/bookings/{booking.id}/cancel")
+        assert response.status_code == 400
+        assert "departed" in response.json()["detail"].lower()
+        
     def test_cancel_ride_wrong_driver(self, client, db, sample_ride, sample_passenger):
         """Test that a non-owner cannot cancel someone else's ride."""
         from app.auth.security import create_access_token
@@ -232,16 +373,66 @@ class TestAPIEndpoints:
         assert response.status_code == 400
         assert "own ride" in response.json().get("detail", "").lower()
 
+    def test_passenger_double_booking(self, client, db, sample_ride, sample_passenger):
+        """Test passenger cannot book two overlapping rides."""
+        from app.auth.security import create_access_token
+        token = create_access_token(subject=str(sample_passenger.id))
+        client.cookies.set("access_token", token)
+
+        # Book first ride
+        res1 = client.post(
+            "/bookings/",
+            headers={"Idempotency-Key": "overlap-test-1"},
+            json={"ride_id": str(sample_ride.id), "seats": 1},
+        )
+        assert res1.status_code == 200
+
+        # Create a second ride at the same time and try to book it
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+        email = f"driver2_{uuid4()}@test.com"
+        driver2 = UserModel(
+            id=uuid4(),
+            name="Driver 2",
+            email=email,
+            password_hash=hash_password("pass"),
+            role="driver",
+            is_email_verified=True,
+        )
+        db.add(driver2)
+        db.flush()
+
+        ride2 = Ride(
+            id=uuid4(),
+            driver_id=driver2.id,
+            source="A",
+            destination="B",
+            departure_time=sample_ride.departure_time + timedelta(hours=1), # overlaps
+            total_seats=4,
+            available_seats=4,
+        )
+        db.add(ride2)
+        db.commit()
+
+        res2 = client.post(
+            "/bookings/",
+            headers={"Idempotency-Key": "overlap-test-2"},
+            json={"ride_id": str(ride2.id), "seats": 1},
+        )
+        assert res2.status_code == 400
+        assert "within 2 hours" in res2.json()["detail"].lower()
+
     def test_unauthorized_access_fails(self, client):
         """Test that endpoints require authentication."""
         # Clear any cookies first
         client.cookies.clear()
         
+        from datetime import timezone
         # Try to create ride without auth
         response = client.post("/rides/", json={
             "source": "A",
             "destination": "B",
-            "departure_time": datetime.now().isoformat(),
+            "departure_time": datetime.now(timezone.utc).isoformat(),
             "total_seats": 4
         })
         
@@ -297,12 +488,13 @@ class TestAPIEndpoints:
         db.add(passenger)
         db.flush()
 
+        from datetime import timezone
         ride = Ride(
             id=uuid4(),
             driver_id=driver.id,
             source="HCity A",
             destination="HCity B",
-            departure_time=datetime.now() + timedelta(hours=3),
+            departure_time=datetime.now(timezone.utc) + timedelta(hours=3),
             total_seats=3,
             available_seats=2,
         )

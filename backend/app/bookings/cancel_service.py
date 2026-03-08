@@ -4,6 +4,7 @@ from app.bookings.models import Booking
 from app.rides.models import Ride
 from app.outbox.models import OutboxEvent
 from app.common.redis import redis_client
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,11 @@ class CancellationService:
             .with_for_update()
             .first()
         )
+
+        if ride.departure_time:
+            now = datetime.now(timezone.utc)
+            if ride.departure_time < now:
+                raise ValueError("Cannot cancel booking for a ride that has already departed")
 
         ride.available_seats += booking.seats_booked
         booking.status = "CANCELLED"

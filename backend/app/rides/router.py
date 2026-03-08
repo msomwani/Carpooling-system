@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.common.db import get_db
@@ -50,12 +50,20 @@ def complete_ride(
 @router.post("/{ride_id}/cancel", response_model=RideResponse)
 def cancel_ride(
     ride_id: str,
+    request: Request,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """Cancel a ride. Only the owning driver can call this."""
+    correlation_id = request.state.correlation_id if hasattr(request.state, "correlation_id") else None
+    
     try:
-        ride = RideService.cancel_ride(db, ride_id=ride_id, driver_id=user_id)
+        ride = RideService.cancel_ride(
+            db, 
+            ride_id=ride_id, 
+            driver_id=user_id,
+            correlation_id=correlation_id
+        )
         return ride
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
