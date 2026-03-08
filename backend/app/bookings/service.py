@@ -1,6 +1,7 @@
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.rides.models import Ride
@@ -95,6 +96,13 @@ class BookingService:
             if str(ride.driver_id) == str(passenger_id):
                 increment("booking_failure_total")
                 raise ValueError("Drivers cannot book their own ride")
+
+            # 🚫 Cannot book rides that have already departed
+            if ride.departure_time:
+                now = datetime.now(timezone.utc)
+                if ride.departure_time < now:
+                    increment("booking_failure_total")
+                    raise ValueError("Cannot book a ride that has already departed")
 
             # 3️⃣ Check for existing CONFIRMED booking to prevent duplicates
             existing_confirmed_booking = (

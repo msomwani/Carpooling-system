@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func, cast, Float
+from datetime import datetime, timezone
 from app.rides.models import Ride, RideStatus
 from app.users.models import User
+from app.common.redis import redis_client
 
 # Earth radius in kilometres (mean)
 _EARTH_RADIUS_KM = 6371.0
@@ -23,6 +25,12 @@ class RideService:
         departure_time=None,
         total_seats: int,
     ) -> Ride:
+        # Validate temporal constraints
+        if departure_time:
+            now = datetime.now(timezone.utc)
+            if departure_time < now:
+                raise ValueError("Cannot create a ride in the past")
+
         # Any authenticated user can create a ride — role is a preference, not a gate
         ride = Ride(
             driver_id=driver_id,
@@ -41,6 +49,14 @@ class RideService:
         db.add(ride)
         db.commit()
         db.refresh(ride)
+
+        try:
+            cache_pattern = "rides:*"
+            for key in redis_client.scan_iter(match=cache_pattern):
+                redis_client.delete(key)
+        except Exception:
+            pass
+
         return ride
 
     @staticmethod
@@ -59,9 +75,23 @@ class RideService:
     def complete_ride(db: Session, *, ride_id: str, driver_id: str) -> Ride:
         """Mark a ride as COMPLETED. Only the owning driver can do this."""
         ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
+        
+        if ride.departure_time:
+            now = datetime.now(timezone.utc)
+            if ride.departure_time > now:
+                raise ValueError("Cannot complete a ride before its departure time")
+                
         ride.status = RideStatus.COMPLETED
         db.commit()
         db.refresh(ride)
+
+        try:
+            cache_pattern = "rides:*"
+            for key in redis_client.scan_iter(match=cache_pattern):
+                redis_client.delete(key)
+        except Exception:
+            pass
+
         return ride
 
     @staticmethod
@@ -71,6 +101,14 @@ class RideService:
         ride.status = RideStatus.CANCELLED
         db.commit()
         db.refresh(ride)
+
+        try:
+            cache_pattern = "rides:*"
+            for key in redis_client.scan_iter(match=cache_pattern):
+                redis_client.delete(key)
+        except Exception:
+            pass
+
         return ride
 
     @staticmethod
