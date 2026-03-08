@@ -1,9 +1,11 @@
+import json
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func, cast, Float
 from datetime import datetime, timezone
 from app.rides.models import Ride, RideStatus
 from app.users.models import User
 from app.common.redis import redis_client
+from app.rides.schemas import RideResponse
 
 # Earth radius in kilometres (mean)
 _EARTH_RADIUS_KM = 6371.0
@@ -157,3 +159,27 @@ class RideService:
             )
             .all()
         )
+
+    @staticmethod
+    def search_rides(
+        db: Session,
+        *,
+        source: str,
+        destination: str,
+    ) -> list[RideResponse]:
+        cache_key = f"rides:{source}:{destination}"
+
+        cached = redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+        rides = db.query(Ride).filter(
+            Ride.source == source,
+            Ride.destination == destination,
+            Ride.available_seats > 0,
+            Ride.status == RideStatus.ACTIVE,
+        ).all()
+
+        result = [RideResponse.model_validate(r) for r in rides]
+        redis_client.setex(cache_key, 60, json.dumps([r.model_dump(mode="json") for r in result]))
+        return result

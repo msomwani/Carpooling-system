@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-import json
 
 from app.common.db import get_db
 from app.rides.schemas import RideCreateRequest, RideResponse
 from app.rides.service import RideService
-from app.rides.models import Ride, RideStatus
+from app.rides.models import RideStatus
 from app.auth.dependencies import get_current_user_id
-from app.common.redis import redis_client
 
 
 router = APIRouter(prefix="/rides", tags=["Rides"])
@@ -84,19 +82,4 @@ def search_rides(
     destination: str,
     db: Session = Depends(get_db),
 ):
-    cache_key = f"rides:{source}:{destination}"
-
-    cached = redis_client.get(cache_key)
-    if cached:
-        return json.loads(cached)
-
-    rides = db.query(Ride).filter(
-        Ride.source == source,
-        Ride.destination == destination,
-        Ride.available_seats > 0,
-        Ride.status == RideStatus.ACTIVE,   # ← only ACTIVE rides
-    ).all()
-
-    result = [RideResponse.model_validate(r) for r in rides]
-    redis_client.setex(cache_key, 60, json.dumps([r.model_dump(mode="json") for r in result]))
-    return result
+    return RideService.search_rides(db, source=source, destination=destination)
