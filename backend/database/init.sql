@@ -32,6 +32,7 @@ CREATE TABLE rides (
     departure_time TIMESTAMP NOT NULL,
     total_seats INTEGER NOT NULL CHECK (total_seats > 0),
     available_seats INTEGER NOT NULL CHECK (available_seats >= 0),
+    status ridestatus NOT NULL DEFAULT 'ACTIVE',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_rides_source_lat_range CHECK (source_lat IS NULL OR (source_lat >= -90 AND source_lat <= 90)),
     CONSTRAINT chk_rides_source_lng_range CHECK (source_lng IS NULL OR (source_lng >= -180 AND source_lng <= 180)),

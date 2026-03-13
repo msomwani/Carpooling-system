@@ -34,6 +34,10 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5173",
             "http://localhost:8000",
             "http://127.0.0.1:8000",
+            "http://localhost:4000",
+            "http://localhost:3001", # Add the fallback port your Next.js app is using
+            "http://127.0.0.1:4000",
+            "http://127.0.0.1:3001",
         ],
         validation_alias="CORS_ORIGINS",
     )
