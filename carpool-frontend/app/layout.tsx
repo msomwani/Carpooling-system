@@ -1,7 +1,19 @@
+"use client"
+
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { GoogleOAuthProvider } from '@react-oauth/google';
+import { AuthProvider } from "@/lib/AuthContext";
+import { RoleProvider } from "@/lib/RoleContext";
+import { BottomNav } from "@/components/BottomNav";
+import SuperTokensReact, { SuperTokensWrapper } from 'supertokens-auth-react'
+import { frontendConfig } from '@/lib/supertokens/config'
+import { usePathname } from "next/navigation";
+
+if (typeof window !== 'undefined') {
+  SuperTokensReact.init(frontendConfig())
+}
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,27 +25,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Carpool Connect",
-  description: "Vadodara-Halol Corridor Carpooling System",
-};
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const pathname = usePathname();
+  const isAuthPage = pathname === "/login" || pathname === "/signup";
+
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* Replace 'YOUR_CLIENT_ID' with the Client ID from your 
-            Google Cloud Console -> APIs & Services -> Credentials 
-        */}
-        <GoogleOAuthProvider clientId="403477193934-b7cahbs2e3kkobclbno63upat04c0at5.apps.googleusercontent.com">
-          {children}
-        </GoogleOAuthProvider>
+        <SuperTokensWrapper>
+          <AuthProvider>
+            <RoleProvider>
+              <main className={isAuthPage ? "" : "pb-16"}>{children}</main>
+              {!isAuthPage && <BottomNav />}
+            </RoleProvider>
+          </AuthProvider>
+        </SuperTokensWrapper>
       </body>
     </html>
   );
