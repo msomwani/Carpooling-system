@@ -108,14 +108,14 @@ export default function LandingPage() {
 
           <RoleSwitcher />
 
-          <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 hover:bg-muted rounded-full">
+          {/* <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 hover:bg-muted rounded-full">
             <Menu className="h-6 w-6" />
-          </button>
+          </button> */}
         </div>
       </header>
 
       {/* Side Menu */}
-      {menuOpen && (
+      {/* {menuOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex justify-end" onClick={() => setMenuOpen(false)}>
           <div className="h-full w-4/5 max-w-sm bg-background shadow-2xl animate-in slide-in-from-right" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 flex justify-between items-center border-b">
@@ -137,32 +137,33 @@ export default function LandingPage() {
             </nav>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Map Section - Rapido Style */}
-      <div className="relative h-[45vh] sm:h-[55vh] overflow-hidden">
+      <div className="relative h-[50vh] sm:h-[55vh] overflow-hidden">
         {/* REPLACED GOOGLE MAP WITH OPENMAP */}
         <OpenMap center={{ lat: 22.3072, lng: 73.1812 }} zoom={13} />
 
         {/* Floating Search Bar */}
-        <div className="absolute top-4 left-4 right-4 z-10 sm:max-w-md sm:mx-auto">
+        <div className="absolute top-2 left-2 right-2 z-10 sm:max-w-md sm:mx-auto">
           <Card className="shadow-2xl border-none bg-background/90 backdrop-blur-sm">
-            <CardContent className="p-3">
+            <CardContent className="p-0.5 ">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                   <Input
                     placeholder={role === "passenger" ? "Where to?" : "Start a ride..."}
-                    className="pl-10 h-12 bg-transparent border-none focus-visible:ring-0 text-base"
+                    className="pl-10 h-8 bg-transparent border-none focus-visible:ring-0 text-base cursor-pointer"
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    readOnly
+                    onClick={() => router.push('/dashboard')}
                   />
                 </div>
-                {role === "driver" && (
-                  <Button size="icon" className="h-10 w-10 rounded-full" onClick={() => router.push('/rides/create')}>
-                    <Plus className="h-6 w-6" />
+                {/* {role === "driver" && (
+                  <Button size="icon" className="h-8 w-8 rounded-full" onClick={() => router.push('/rides/create')}>
+                    <Plus className="h-4 w-4" />
                   </Button>
-                )}
+                )} */}
               </div>
             </CardContent>
           </Card>
@@ -170,7 +171,7 @@ export default function LandingPage() {
       </div>
 
       {/* Content Section */}
-      <section className="px-4 -mt-10 relative z-20">
+      <section className="px-4 mt-2 relative z-20">
         <div className="max-w-6xl mx-auto">
           {role === "passenger" ? (
             <div className="space-y-6">
@@ -257,26 +258,6 @@ export default function LandingPage() {
               </Button>
             </div>
           )}
-        </div>
-      </section>
-
-      {/* Corridor Info */}
-      <section className="py-12 px-4">
-        <div className="max-w-6xl mx-auto grid grid-cols-2 gap-4">
-          <Card className="bg-secondary/20 border-none rounded-3xl p-6 flex flex-col items-center text-center">
-            <div className="w-12 h-12 bg-secondary rounded-2xl flex items-center justify-center mb-3 shadow-md">
-              <Badge className="bg-white text-secondary-foreground hover:bg-white border-none shadow-none">98%</Badge>
-            </div>
-            <h4 className="font-bold text-sm">Safe Rides</h4>
-            <p className="text-[10px] text-muted-foreground">Verified identity</p>
-          </Card>
-          <Card className="bg-accent/30 border-none rounded-3xl p-6 flex flex-col items-center text-center">
-            <div className="w-12 h-12 bg-accent rounded-2xl flex items-center justify-center mb-3 shadow-md">
-              <Badge className="bg-white text-accent-foreground hover:bg-white border-none shadow-none">₹50+</Badge>
-            </div>
-            <h4 className="font-bold text-sm">Save Fuel</h4>
-            <p className="text-[10px] text-muted-foreground">Split costs daily</p>
-          </Card>
         </div>
       </section>
     </div>

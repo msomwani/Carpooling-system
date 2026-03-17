@@ -18,7 +18,7 @@ export function BottomNav() {
   const tabs = [
     { name: "Home", icon: Home, href: "/" },
     { name: "Booking", icon: Calendar, href: "/bookings" },
-    { name: "Account", icon: User, href: "/login" }, // Assuming /login leads to account or login
+    { name: "Account", icon: User, href: "/account" },
   ]
 
   return (

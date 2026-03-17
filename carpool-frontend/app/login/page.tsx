@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import * as ThirdParty from "supertokens-auth-react/recipe/thirdparty"
 import * as EmailPassword from "supertokens-auth-react/recipe/emailpassword"
 import { useAuth } from "@/lib/AuthContext"
+import { useGoogleLogin } from '@react-oauth/google'
 import {
   Card,
   CardContent,
@@ -23,7 +24,7 @@ import { Loader2, LogOut, User as UserIcon, Mail, ShieldCheck, Lock, UserPlus, L
 
 export default function LoginPage() {
   const router = useRouter()
-  const { user, logout, isLoading: authLoading } = useAuth()
+  const { user, logout, login, isLoading: authLoading } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -33,25 +34,31 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  const handleGoogleLogin = async () => {
-    setIsLoading(true)
-    setError("")
-    try {
-      const response = await ThirdParty.signInAndUp({
-        userContext: {}
-      })
-
-      if (response.status === "OK") {
-        router.push("/dashboard")
-      } else {
-        setError("Login failed")
+  const handleGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setIsLoading(true)
+      try {
+        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        })
+        const googleUser = await res.json()
+        
+        login({
+          id: googleUser.sub,
+          name: googleUser.name,
+          email: googleUser.email,
+          role: "passenger"
+        })
+        
+        router.push("/")
+      } catch (e: any) {
+        setError("Failed to fetch Google profile")
+      } finally {
+        setIsLoading(false)
       }
-    } catch (e: any) {
-      setError(e.message || "Something went wrong")
-    } finally {
-      setIsLoading(false)
-    }
-  }
+    },
+    onError: () => setError("Google login failed"),
+  })
 
   const handleEmailPasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,7 +87,7 @@ export default function LoginPage() {
           ]
         })
         if (response.status === "OK") {
-          router.push("/dashboard")
+          router.push("/")
         } else if (response.status === "WRONG_CREDENTIALS_ERROR") {
           setError("Invalid email or password")
         } else {
@@ -121,8 +128,8 @@ export default function LoginPage() {
           <CardContent className="space-y-6 pt-8 text-center">
             <p className="text-muted-foreground">You are currently logged in.</p>
             <div className="grid grid-cols-1 gap-3">
-              <Button variant="outline" className="rounded-2xl h-12 font-bold" onClick={() => router.push('/dashboard')}>
-                Go to Dashboard
+              <Button variant="outline" className="rounded-2xl h-12 font-bold" onClick={() => router.push('/')}>
+                Go to Home
               </Button>
             </div>
           </CardContent>
@@ -229,7 +236,7 @@ export default function LoginPage() {
           </div>
 
           <Button 
-            onClick={handleGoogleLogin} 
+            onClick={() => handleGoogleLogin()} 
             variant="outline"
             className="w-full rounded-full h-12 font-bold gap-2 border-2 hover:bg-slate-50 transition-all"
             disabled={isLoading}
