@@ -23,14 +23,14 @@ type UserRole = "passenger" | "driver"
 
 export default function DashboardPage() {
   const [rides, setRides] = useState<Ride[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [source, setSource] = useState("")
+  const [destination, setDestination] = useState("")
   const [debugError, setDebugError] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<UserRole>("passenger")
   const [bookingRide, setBookingRide] = useState<string | null>(null)
   const [bookingSeats, setBookingSeats] = useState(1)
   const [bookingError, setBookingError] = useState<string | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
 
   const fetchRides = async () => {
     setIsLoading(true)
@@ -41,7 +41,8 @@ export default function DashboardPage() {
         lat: "22.3072",
         lng: "73.1812",
         radius_km: "50",
-        role: "source"
+        source: source,
+        destination: destination
       })
 
       const response = await fetch(`/api/rides/nearby?${params.toString()}`)
@@ -50,7 +51,6 @@ export default function DashboardPage() {
         const data = await response.json()
         setRides(data)
       } else {
-        const errorData = await response.json().catch(() => null)
         setDebugError("Could not load nearby rides from the backend.")
       }
     } catch (error) {
@@ -65,19 +65,26 @@ export default function DashboardPage() {
     if (savedRole) {
       setUserRole(savedRole)
     }
-    fetchRides()
+    
+    // Check for query params if coming from Home page search or deep link
+    const urlParams = new URLSearchParams(window.location.search)
+    const qSource = urlParams.get('source')
+    const qDest = urlParams.get('destination')
+    if (qSource) setSource(qSource)
+    if (qDest) setDestination(qDest)
+    
+    if (qSource || qDest) {
+        fetchRides()
+    } else {
+        // Initial fetch if no params (optional, can keep empty until search)
+        fetchRides()
+    }
   }, [])
 
   const toggleRole = (role: UserRole) => {
     setUserRole(role)
     localStorage.setItem("userRole", role)
-    setMenuOpen(false)
   }
-
-  const filteredRides = rides.filter((ride) => 
-    ride.source.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ride.destination.toLowerCase().includes(searchTerm.toLowerCase())
-  )
 
   const handleBook = async (rideId: string) => {
     setBookingRide(rideId)
@@ -112,268 +119,202 @@ export default function DashboardPage() {
     }
   }
 
-  const handleLogout = () => {
-    localStorage.clear()
-    window.location.href = '/'
-  }
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top Bar */}
-      <header className="border-b sticky top-0 bg-background z-40">
+    <div className="min-h-screen bg-muted/30">
+      {/* Top Bar - Clean & Modern */}
+      <header className="bg-background border-b sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/">
               <div className="relative w-8 h-8">
-                <Image 
-                  src="/croc_mascot.png" 
-                  alt="Croc" 
-                  fill
-                  className="object-contain"
-                />
+                <Image src="/croc_mascot.png" alt="Croc" fill className="object-contain" />
               </div>
             </Link>
-            <Link href="/">
-              <span className="font-bold text-lg">Croc Ride</span>
-            </Link>
+            <span className="font-bold text-lg">Croc Ride</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-1 bg-muted rounded-full p-1">
+          
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-1 bg-muted rounded-full p-1">
               <button
                 onClick={() => toggleRole("passenger")}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition ${
-                  userRole === "passenger" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                className={`flex items-center gap-1 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  userRole === "passenger" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <User className="h-3 w-3" /> Passenger
+                Passenger
               </button>
               <button
                 onClick={() => toggleRole("driver")}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition ${
-                  userRole === "driver" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                className={`flex items-center gap-1 px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  userRole === "driver" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <CarIcon className="h-3 w-3" /> Driver
+                Driver
               </button>
             </div>
-            <button onClick={() => setMenuOpen(!menuOpen)} className="p-2">
-              <Menu className="h-6 w-6" />
-            </button>
+            <Link href="/account">
+               <Button variant="ghost" size="icon" className="rounded-full">
+                 <User className="h-5 w-5" />
+               </Button>
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Side Menu */}
-      {menuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setMenuOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-64 bg-background shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 flex justify-between items-center border-b">
-              <span className="font-semibold">Account</span>
-              <button onClick={() => setMenuOpen(false)}>
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-4 border-b">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="font-medium">Mode:</span>
+      <main className="max-w-2xl mx-auto p-4 space-y-6 pt-8">
+        
+        {/* Search Point Section - Zomato Style */}
+        <section className="space-y-4">
+          <div className="bg-background rounded-3xl p-6 shadow-xl border-none space-y-4">
+            <h1 className="text-2xl font-black tracking-tight mb-2">Find your ride</h1>
+            
+            <div className="space-y-2">
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary" />
+                <Input 
+                  placeholder="Leaving from..." 
+                  className="pl-10 h-14 rounded-2xl bg-muted/30 border-none text-base font-medium focus-visible:ring-primary"
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                />
               </div>
-              <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  variant={userRole === "passenger" ? "default" : "outline"}
-                  onClick={() => toggleRole("passenger")}
-                >
-                  Passenger
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant={userRole === "driver" ? "default" : "outline"}
-                  onClick={() => toggleRole("driver")}
-                >
-                  Driver
-                </Button>
+              
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-destructive" />
+                <Input 
+                  placeholder="Going to..." 
+                  className="pl-10 h-14 rounded-2xl bg-muted/30 border-none text-base font-medium focus-visible:ring-primary"
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                />
               </div>
             </div>
-            <nav className="p-4 space-y-2">
-              <Link href="/" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Home
-              </Link>
-              <Link href="/rides" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Find Rides
-              </Link>
-              <Link href="/rides/create" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Offer a Ride
-              </Link>
-              <Link href="/bookings" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                My Bookings
-              </Link>
-              <Link href="/analytics" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Analytics
-              </Link>
-              <hr className="my-4" />
-              <button className="block w-full text-left p-3 rounded-lg hover:bg-muted" onClick={handleLogout}>
-                Sign Out
-              </button>
-            </nav>
+            
+            <Button 
+                onClick={fetchRides} 
+                className="w-full h-14 rounded-2xl text-lg font-black shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90 transition-all active:scale-95"
+                disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : "Search Rides"}
+            </Button>
           </div>
-        </div>
-      )}
+        </section>
 
-      <div className="max-w-6xl mx-auto p-6 pb-24">
-        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">
-              {userRole === "driver" ? "Driver Dashboard" : "Dashboard"}
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              {userRole === "driver" ? "Manage your rides" : "Find rides and bookings"}
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search..." 
-                className="pl-10"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            {userRole === "driver" && (
-              <Link href="/rides/create">
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" /> Offer Ride
-                </Button>
-              </Link>
+        {/* Results Section */}
+        <section className="space-y-4 pb-24">
+            {debugError && (
+                <div className="p-4 bg-destructive/10 text-destructive rounded-2xl text-sm font-medium flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    {debugError}
+                </div>
             )}
-          </div>
-        </div>
 
-        {debugError && (
-          <div className="mb-4 p-3 border border-destructive rounded-lg flex items-center gap-2 text-sm">
-            <AlertTriangle className="h-4 w-4" />
-            {debugError}
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-2">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          </div>
-        ) : filteredRides.length === 0 ? (
-          <Card className="p-8 text-center">
-            <h3 className="font-semibold">No rides found</h3>
-            <p className="text-muted-foreground text-sm mt-1">
-              {userRole === "driver" ? "Create your first ride!" : "No rides in your area."}
-            </p>
-            {userRole === "driver" ? (
-              <Link href="/rides/create">
-                <Button className="mt-4">Offer a Ride</Button>
-              </Link>
+            {isLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground font-bold animate-pulse">Scanning routes...</p>
+                </div>
+            ) : rides.length === 0 ? (
+                <div className="py-20 text-center space-y-3 opacity-60">
+                    <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto">
+                        <Search className="h-10 w-10" />
+                    </div>
+                    <p className="font-bold text-muted-foreground">No rides matched your search</p>
+                    <p className="text-xs">Try different locations or broaden your search.</p>
+                </div>
             ) : (
-              <Button className="mt-4" variant="outline" onClick={fetchRides}>Refresh</Button>
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between px-2">
+                        <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground/60">Available Rides</h2>
+                        <Badge variant="secondary" className="rounded-full px-3">{rides.length} Found</Badge>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 gap-4">
+                        {rides.map((ride) => (
+                            <Card key={ride.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-background hover:shadow-lg transition-all group">
+                                <CardHeader className="pb-3 bg-muted/10">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                                <CarIcon className="h-4 w-4 text-primary" />
+                                            </div>
+                                            <span className="text-xs font-bold">Standard Trip</span>
+                                        </div>
+                                        <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/20 border-none font-black px-3 rounded-full uppercase text-[10px]">
+                                            {ride.status}
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent className="pt-4">
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex flex-col items-center gap-1 mt-1">
+                                            <div className="w-2 h-2 rounded-full bg-primary" />
+                                            <div className="w-0.5 h-8 bg-muted-foreground/20" />
+                                            <div className="w-2 h-2 rounded-full bg-destructive" />
+                                        </div>
+                                        <div className="flex-1 space-y-6">
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Pick up</p>
+                                                <p className="font-bold text-sm leading-tight">{ride.source}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Drop off</p>
+                                                <p className="font-bold text-sm leading-tight">{ride.destination}</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right flex flex-col items-end justify-between self-stretch">
+                                            <div className="bg-primary/5 p-2 rounded-2xl text-center min-w-[60px]">
+                                                <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">Price</p>
+                                                <p className="text-base font-black text-primary">₹149</p>
+                                            </div>
+                                            <div className="flex items-center gap-1 text-muted-foreground">
+                                                <Users className="h-3 w-3" />
+                                                <span className="text-xs font-bold">{ride.available_seats} left</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 flex items-center justify-between pt-4 border-t">
+                                        <div className="flex items-center gap-2">
+                                            <Calendar className="h-4 w-4 text-primary" />
+                                            <span className="text-sm font-bold">
+                                                {new Date(ride.departure_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                        </div>
+                                        {userRole === "passenger" ? (
+                                            bookingRide === ride.id ? (
+                                              <div className="flex gap-2">
+                                                <Input 
+                                                  type="number" 
+                                                  min={1} 
+                                                  max={ride.available_seats}
+                                                  value={bookingSeats}
+                                                  onChange={(e) => setBookingSeats(Number(e.target.value))}
+                                                  className="w-14 h-9 rounded-xl text-center font-bold"
+                                                />
+                                                <Button size="sm" className="rounded-xl font-bold px-4" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
+                                                <Button size="sm" variant="ghost" className="rounded-xl font-bold" onClick={() => setBookingRide(null)}>X</Button>
+                                              </div>
+                                            ) : (
+                                              <Button 
+                                                className="rounded-2xl font-black px-8 py-5 text-sm shadow-md hover:shadow-lg transition-all" 
+                                                onClick={() => handleBook(ride.id)}
+                                                disabled={ride.available_seats < 1}
+                                              >
+                                                Book Seat
+                                              </Button>
+                                            )
+                                        ) : (
+                                            <span className="text-xs font-bold text-muted-foreground italic bg-muted px-4 py-2 rounded-full">Your Ride</span>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
             )}
-          </Card>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredRides.map((ride) => (
-              <Card key={ride.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex justify-between items-center">
-                    <Badge variant="secondary" className="text-xs">{ride.status}</Badge>
-                    <span className="text-xs">{ride.total_seats} seats</span>
-                  </div>
-                  <CardTitle className="text-sm font-bold flex flex-col gap-1 mt-2">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-primary" />
-                      {ride.source}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-destructive" />
-                      {ride.destination}
-                    </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-muted-foreground pb-2">
-                  <div className="flex items-center justify-between border-t pt-2">
-                    <div className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(ride.departure_time).toLocaleString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Users className="h-3 w-3" />
-                      {ride.available_seats}
-                    </div>
-                  </div>
-                </CardContent>
-                <CardFooter className="pt-0">
-                  {userRole === "passenger" ? (
-                    bookingRide === ride.id ? (
-                      <div className="w-full space-y-2">
-                        {bookingError && <p className="text-xs text-destructive">{bookingError}</p>}
-                        <div className="flex gap-2">
-                          <Input 
-                            type="number" 
-                            min={1} 
-                            max={ride.available_seats}
-                            value={bookingSeats}
-                            onChange={(e) => setBookingSeats(Number(e.target.value))}
-                            className="w-16 h-8"
-                          />
-                          <Button size="sm" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
-                          <Button size="sm" variant="outline" onClick={() => setBookingRide(null)}>Cancel</Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <Button 
-                        className="w-full text-xs" 
-                        size="sm"
-                        onClick={() => handleBook(ride.id)}
-                        disabled={ride.available_seats < 1}
-                      >
-                        {ride.available_seats > 0 ? "Book" : "Full"}
-                      </Button>
-                    )
-                  ) : (
-                    <div className="w-full text-center text-xs text-muted-foreground">
-                      Your ride
-                    </div>
-                  )}
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Navigation for Mobile */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t md:hidden">
-        <div className="flex justify-around items-center h-16">
-          <Link href="/" className="flex flex-col items-center gap-1 p-2">
-            <Home className="h-5 w-5" />
-            <span className="text-xs">Home</span>
-          </Link>
-          <Link href="/rides" className="flex flex-col items-center gap-1 p-2">
-            <CarIcon className="h-5 w-5" />
-            <span className="text-xs">Rides</span>
-          </Link>
-          <Link href="/bookings" className="flex flex-col items-center gap-1 p-2">
-            <BookOpen className="h-5 w-5" />
-            <span className="text-xs">Bookings</span>
-          </Link>
-          <button onClick={() => setMenuOpen(true)} className="flex flex-col items-center gap-1 p-2">
-            <User className="h-5 w-5" />
-            <span className="text-xs">Account</span>
-          </button>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   )
 }
