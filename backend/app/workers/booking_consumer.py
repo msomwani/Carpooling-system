@@ -11,6 +11,9 @@ from app.common.kafka import publish_event
 from app.config.settings import settings
 from app.events.models import ProcessedEvent
 from app.notifications.models import NotificationAttempt
+import app.rides.models  # noqa
+import app.bookings.models  # noqa
+import app.users.models  # noqa
 
 conf = {
     "bootstrap.servers": settings.kafka_bootstrap_servers,
