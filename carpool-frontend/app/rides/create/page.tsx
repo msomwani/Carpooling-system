@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, ArrowLeft, MapPin, Calendar, Users } from "lucide-react"
+import { useAuth } from "@/lib/AuthContext"
 
 type GoogleMap = any
 type GoogleMarker = any
@@ -18,6 +19,7 @@ let google: any
 
 export default function CreateRidePage() {
   const router = useRouter()
+  const { getAuthHeaders } = useAuth()
   const [apiKey, setApiKey] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -176,12 +178,12 @@ export default function CreateRidePage() {
     try {
       const response = await fetch("/api/rides/", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       })
 
       if (response.ok) {
-        router.push("/dashboard")
+        router.push("/bookings")
       } else {
         const data = await response.json()
         setError(data.detail || "Failed to create ride.")
@@ -208,8 +210,8 @@ export default function CreateRidePage() {
             </Link>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm">Dashboard</Button>
+            <Link href="/rides">
+              <Button variant="ghost" size="sm">Rides</Button>
             </Link>
           </div>
         </div>
@@ -217,8 +219,8 @@ export default function CreateRidePage() {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="mb-6">
-          <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1">
-            <ArrowLeft className="h-4 w-4" /> Back to Dashboard
+          <Link href="/rides" className="text-sm text-muted-foreground hover:text-primary flex items-center gap-1">
+            <ArrowLeft className="h-4 w-4" /> Back to Rides
           </Link>
         </div>
 

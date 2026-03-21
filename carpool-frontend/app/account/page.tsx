@@ -44,10 +44,10 @@ export default function AccountPage() {
 
   // Mock analytics data
   const stats = [
-    { label: "Ride Created", value: "8", icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10" },
-    { label: "Ride Completed", value: "12", icon: Award, color: "text-primary", bg: "bg-primary/10" },
-    { label: "Money Earned", value: "₹2,450", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
-    { label: "Time Saved", value: "45h", icon: TrendingUp, color: "text-orange-500", bg: "bg-orange-500/10" }
+    { label: "Completed", value: "12", icon: Award, color: "text-primary", bg: "bg-primary/10" },
+    { label: "Created", value: "5", icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10" },
+    { label: "Earnings", value: "₹1,250", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
+    { label: "Miles", value: "450", icon: Star, color: "text-orange-500", bg: "bg-orange-500/10" }
   ]
 
   useEffect(() => {
@@ -91,9 +91,7 @@ export default function AccountPage() {
             <h1 className="text-lg font-bold">Croc Ride</h1>
           </div>
         </div>
-        <Button variant="ghost" size="icon" className="rounded-full">
-          <Settings className="h-5 w-5 text-muted-foreground" />
-        </Button>
+
       </header>
 
       <main className="max-w-xl mx-auto p-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
