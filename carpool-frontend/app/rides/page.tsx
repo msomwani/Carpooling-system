@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Search, MapPin, Clock, Users, Menu, X, Home, Car as CarIcon, User } from "lucide-react"
+import { useAuth } from "@/lib/AuthContext"
 
 type Ride = {
   id: string
@@ -27,19 +28,23 @@ export default function RidesPage() {
   const [searchSource, setSearchSource] = useState("")
   const [searchDest, setSearchDest] = useState("")
   const [debugError, setDebugError] = useState<string | null>(null)
-  const [menuOpen, setMenuOpen] = useState(false)
+  
+  const { user, getAuthHeaders } = useAuth()
+  const [bookingRide, setBookingRide] = useState<string | null>(null)
+  const [bookingSeats, setBookingSeats] = useState(1)
+  const [bookingError, setBookingError] = useState<string | null>(null)
 
   const searchRides = async () => {
     setIsLoading(true)
     setDebugError(null)
-    
+
     try {
       if (searchSource && searchDest) {
         const params = new URLSearchParams()
         params.set("source", searchSource)
         params.set("destination", searchDest)
         const response = await fetch(`/api/rides?${params.toString()}`)
-        
+
         if (response.ok) {
           const data = await response.json()
           setRides(data)
@@ -55,7 +60,7 @@ export default function RidesPage() {
           role: "source"
         })
         const response = await fetch(`/api/rides/nearby?${params.toString()}`)
-        
+
         if (response.ok) {
           const data = await response.json()
           setRides(data)
@@ -74,8 +79,41 @@ export default function RidesPage() {
     searchRides()
   }, [])
 
-  const handleBook = (rideId: string) => {
-    router.push('/login')
+  const handleBookClick = (rideId: string) => {
+    if (!user) {
+      router.push('/login')
+      return
+    }
+    setBookingRide(rideId)
+    setBookingSeats(1)
+    setBookingError(null)
+  }
+
+  const confirmBooking = async (rideId: string) => {
+    setBookingError(null)
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Idempotency-Key": `${rideId}-${Date.now()}`
+        },
+        body: JSON.stringify({
+          ride_id: rideId,
+          seats: bookingSeats
+        })
+      })
+
+      if (response.ok) {
+        setBookingRide(null)
+        router.push("/bookings")
+      } else {
+        const data = await response.json()
+        setBookingError(data.detail || "Booking failed")
+      }
+    } catch (error) {
+      setBookingError("Failed to book. Please try again.")
+    }
   }
 
   return (
@@ -86,9 +124,9 @@ export default function RidesPage() {
           <div className="flex items-center gap-3">
             <Link href="/">
               <div className="relative w-8 h-8">
-                <Image 
-                  src="/croc_mascot.png" 
-                  alt="Croc" 
+                <Image
+                  src="/croc_mascot.png"
+                  alt="Croc"
                   fill
                   className="object-contain"
                 />
@@ -98,43 +136,10 @@ export default function RidesPage() {
               <span className="font-bold text-lg">Croc Ride</span>
             </Link>
           </div>
-          <button onClick={() => setMenuOpen(!menuOpen)} className="p-2">
-            <Menu className="h-6 w-6" />
-          </button>
+
         </div>
       </header>
 
-      {/* Side Menu */}
-      {menuOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setMenuOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-64 bg-background shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 flex justify-between items-center border-b">
-              <span className="font-semibold">Menu</span>
-              <button onClick={() => setMenuOpen(false)}>
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav className="p-4 space-y-2">
-              <Link href="/dashboard" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Dashboard
-              </Link>
-              <Link href="/rides/create" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Offer a Ride
-              </Link>
-              <Link href="/bookings" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                My Bookings
-              </Link>
-              <Link href="/analytics" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Analytics
-              </Link>
-              <hr className="my-4" />
-              <Link href="/login" className="block p-3 rounded-lg hover:bg-muted" onClick={() => setMenuOpen(false)}>
-                Sign In
-              </Link>
-            </nav>
-          </div>
-        </div>
-      )}
 
       <div className="max-w-6xl mx-auto p-6 pb-24">
         <div className="mb-8">
@@ -147,16 +152,16 @@ export default function RidesPage() {
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="text-sm font-medium mb-2 block">From</label>
-                <Input 
-                  placeholder="e.g., Fatehgunj, GIDC..." 
+                <Input
+                  placeholder="e.g., Fatehgunj, GIDC..."
                   value={searchSource}
                   onChange={(e) => setSearchSource(e.target.value)}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium mb-2 block">To</label>
-                <Input 
-                  placeholder="e.g., Halol, GIDC..." 
+                <Input
+                  placeholder="e.g., Halol, GIDC..."
                   value={searchDest}
                   onChange={(e) => setSearchDest(e.target.value)}
                 />
@@ -232,9 +237,27 @@ export default function RidesPage() {
                         </div>
                       </div>
                     </div>
-                    <Link href="/login">
-                      <Button>Login to Book</Button>
-                    </Link>
+                    {bookingRide === ride.id ? (
+                      <div className="flex flex-col gap-2 items-end">
+                        <div className="flex items-center gap-2">
+                          <Input 
+                            type="number" 
+                            min={1} 
+                            max={ride.available_seats}
+                            value={bookingSeats}
+                            onChange={(e) => setBookingSeats(Number(e.target.value))}
+                            className="w-16 h-10 rounded-xl text-center font-bold"
+                          />
+                          <Button className="rounded-xl font-bold bg-green-600 hover:bg-green-700" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
+                          <Button variant="ghost" className="rounded-xl" onClick={() => setBookingRide(null)}>X</Button>
+                        </div>
+                        {bookingError && <span className="text-xs text-destructive">{bookingError}</span>}
+                      </div>
+                    ) : (
+                      <Button className="rounded-xl font-bold px-6" onClick={() => handleBookClick(ride.id)} disabled={ride.available_seats < 1}>
+                        {user ? "Book Ride" : "Login to Book"}
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -254,7 +277,7 @@ export default function RidesPage() {
             <CarIcon className="h-5 w-5" />
             <span className="text-xs">Rides</span>
           </Link>
-          <Link href="/dashboard" className="flex flex-col items-center gap-1 p-2">
+          <Link href="/account" className="flex flex-col items-center gap-1 p-2">
             <User className="h-5 w-5" />
             <span className="text-xs">Account</span>
           </Link>

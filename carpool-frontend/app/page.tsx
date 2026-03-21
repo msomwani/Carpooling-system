@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Search, MapPin, Clock, Menu, X, Plus } from "lucide-react"
 import { useRole } from "@/lib/RoleContext"
+import { useAuth } from "@/lib/AuthContext"
 import { RoleSwitcher } from "@/components/RoleSwitcher"
-// Make sure this points to the new OpenMap file we created!
 // import { OpenMap } from "@/components/GoogleMap"
 import dynamic from "next/dynamic"
 // import { Loader2 } from "lucide-react"
@@ -49,6 +49,10 @@ export default function LandingPage() {
   const [searched, setSearched] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const { user, getAuthHeaders } = useAuth()
+  const [bookingRide, setBookingRide] = useState<string | null>(null)
+  const [bookingSeats, setBookingSeats] = useState(1)
+  const [bookingError, setBookingError] = useState<string | null>(null)
 
   // Only run client-side logic after mount to prevent hydration errors
   useEffect(() => {
@@ -92,6 +96,43 @@ export default function LandingPage() {
     ride.destination.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
+  const handleBookClick = (rideId: string) => {
+    if (!user) {
+      router.push('/login')
+      return
+    }
+    setBookingRide(rideId)
+    setBookingSeats(1)
+    setBookingError(null)
+  }
+
+  const confirmBooking = async (rideId: string) => {
+    setBookingError(null)
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Idempotency-Key": `${rideId}-${Date.now()}`
+        },
+        body: JSON.stringify({
+          ride_id: rideId,
+          seats: bookingSeats
+        })
+      })
+
+      if (response.ok) {
+        setBookingRide(null)
+        router.push("/bookings")
+      } else {
+        const data = await response.json()
+        setBookingError(data.detail || "Booking failed")
+      }
+    } catch (error) {
+      setBookingError("Failed to book. Please try again.")
+    }
+  }
+
   if (!isMounted) return null
 
   return (
@@ -129,11 +170,9 @@ export default function LandingPage() {
             </div>
             <nav className="p-6 space-y-4">
               <Link href="/rides" className="flex items-center p-3 rounded-xl hover:bg-muted transition-colors font-medium">Find Rides</Link>
-              <Link href="/rides/create" className="flex items-center p-3 rounded-xl hover:bg-muted transition-colors font-medium">Offer a Ride</Link>
-              <Link href="/dashboard" className="flex items-center p-3 rounded-xl hover:bg-muted transition-colors font-medium">Dashboard</Link>
               <div className="h-px bg-border my-6" />
               <Link href="/login" className="flex items-center p-3 rounded-xl hover:bg-muted transition-colors font-medium text-muted-foreground">Sign In</Link>
-              <Link href="/signup" className="flex items-center justify-center p-4 rounded-xl bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20">Get Started</Link>
+              <Link href="/login" className="flex items-center justify-center p-4 rounded-xl bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/20">Get Started</Link>
             </nav>
           </div>
         </div>
@@ -156,7 +195,7 @@ export default function LandingPage() {
                     className="pl-10 h-8 bg-transparent border-none focus-visible:ring-0 text-base cursor-pointer"
                     value={searchTerm}
                     readOnly
-                    onClick={() => router.push('/dashboard')}
+                    onClick={() => router.push('/rides')}
                   />
                 </div>
                 {/* {role === "driver" && (
@@ -202,7 +241,7 @@ export default function LandingPage() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredRides.map((ride) => (
-                    <Card key={ride.id} className="rounded-3xl shadow-sm hover:shadow-md transition-shadow cursor-pointer border-none overflow-hidden" onClick={() => router.push('/login')}>
+                    <Card key={ride.id} className="rounded-3xl shadow-sm hover:shadow-md transition-shadow border-none overflow-hidden">
                       <CardHeader className="pb-3 bg-muted/30">
                         <div className="flex justify-between items-center bg-background/50 backdrop-blur-sm p-2 rounded-2xl">
                           <Badge variant="secondary" className="rounded-xl px-3 bg-primary/10 text-primary border-none">{ride.available_seats} seats free</Badge>
@@ -235,7 +274,27 @@ export default function LandingPage() {
                                 })}
                               </span>
                             </div>
-                            <Button size="sm" className="rounded-xl px-6 font-bold">Book</Button>
+                            {bookingRide === ride.id ? (
+                              <div className="flex flex-col gap-2 items-end">
+                                <div className="flex items-center gap-2">
+                                  <Input 
+                                    type="number" 
+                                    min={1} 
+                                    max={ride.available_seats}
+                                    value={bookingSeats}
+                                    onChange={(e) => setBookingSeats(Number(e.target.value))}
+                                    className="w-14 h-8 rounded-xl text-center font-bold px-1"
+                                  />
+                                  <Button size="sm" className="rounded-xl px-4 font-bold bg-green-600 hover:bg-green-700" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
+                                  <Button size="sm" variant="ghost" className="rounded-xl px-2" onClick={() => setBookingRide(null)}>X</Button>
+                                </div>
+                                {bookingError && <span className="text-xs text-destructive max-w-[200px] text-right leading-tight">{bookingError}</span>}
+                              </div>
+                            ) : (
+                              <Button size="sm" className="rounded-xl px-6 font-bold" onClick={() => handleBookClick(ride.id)} disabled={ride.available_seats < 1}>
+                                Book Base
+                              </Button>
+                            )}
                           </div>
                         </div>
                       </CardContent>
