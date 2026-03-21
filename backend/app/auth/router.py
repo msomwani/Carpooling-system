@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.common.db import get_db
@@ -15,20 +15,6 @@ from app.auth.security import create_access_token
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-
-
-
-def _set_auth_cookie(response: Response, user_id: str) -> None:
-    token = create_access_token(subject=user_id)
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        secure=False,   # Set to True in production (HTTPS)
-        samesite="lax",
-    )
-
-
 @router.post("/signup", status_code=201)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     """Register a new user. Sends an OTP to verify the email."""
@@ -43,15 +29,14 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/verify-otp")
-def verify_otp(payload: VerifyOTPRequest, response: Response, db: Session = Depends(get_db)):
-    """Verify an OTP code. On success, logs the user in."""
+def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
+    """Verify an OTP code."""
     try:
         user = AuthService.verify_otp(db, email=payload.email, otp=payload.otp)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    _set_auth_cookie(response, str(user.id))
-    return {"message": "Email verified successfully. You are now logged in."}
+    return {"message": "Email verified successfully.", "user_id": str(user.id)}
 
 
 @router.post("/resend-otp")
@@ -64,9 +49,9 @@ def resend_otp(payload: ResendOTPRequest, db: Session = Depends(get_db)):
     return {"message": "A new OTP has been sent to your email."}
 
 
-@router.post("/login")
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    """Standard email+password login. Rejects accounts that are not verified."""
+@router.post("/verify-credentials")
+def verify_credentials(payload: LoginRequest, db: Session = Depends(get_db)):
+    """Standard email+password login check for NextAuth Credentials Provider."""
     user = AuthService.authenticate(db, email=payload.email, password=payload.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -76,13 +61,17 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             detail="Email not verified. Please check your inbox for the OTP or request a new one at /auth/resend-otp",
         )
 
-    _set_auth_cookie(response, str(user.id))
-    return {"message": "Logged in"}
+    return {
+        "id": str(user.id),
+        "name": user.name,
+        "email": user.email,
+        "role": user.role
+    }
 
 
-@router.post("/google")
-def google_login(payload: GoogleAuthRequest, response: Response, db: Session = Depends(get_db)):
-    """Sign in or sign up using a Google ID token from the frontend."""
+@router.post("/sync-google-user")
+def sync_google_user(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """Sync/check a Google user for NextAuth Google Provider."""
     try:
         user = AuthService.google_auth(db, id_token=payload.id_token, role=payload.role)
     except ValueError as exc:
@@ -90,5 +79,10 @@ def google_login(payload: GoogleAuthRequest, response: Response, db: Session = D
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
-    _set_auth_cookie(response, str(user.id))
-    return {"message": "Logged in via Google", "name": user.name, "email": user.email}
+    return {
+        "id": str(user.id),
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "token": create_access_token(str(user.id)),
+    }

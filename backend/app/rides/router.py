@@ -14,7 +14,7 @@ router = APIRouter(prefix="/rides", tags=["Rides"])
 
 
 
-@router.post("/", response_model=RideResponse)
+@router.post("", response_model=RideResponse)
 def create_ride(
     payload: RideCreateRequest,
     user_id: str = Depends(get_current_user_id),
@@ -91,3 +91,11 @@ def search_rides(
     db: Session = Depends(get_db),
 ):
     return RideService.search_rides(db, source=source, destination=destination)
+
+@router.get("/me", response_model=list[RideResponse])
+def get_my_rides(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Fetch all rides created by the authenticated driver."""
+    return [RideResponse.model_validate(r) for r in RideService.get_driver_rides(db, driver_id=user_id)]

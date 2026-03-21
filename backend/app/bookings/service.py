@@ -101,7 +101,10 @@ class BookingService:
             # 🚫 Cannot book rides that have already departed
             if ride.departure_time:
                 now = datetime.now(timezone.utc)
-                if ride.departure_time < now:
+                dept = ride.departure_time
+                if dept.tzinfo is None:
+                    dept = dept.replace(tzinfo=timezone.utc)
+                if dept < now:
                     increment("booking_failure_total")
                     raise ValueError("Cannot book a ride that has already departed")
 

@@ -1,52 +1,366 @@
 import pytest
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from app.auth.security import create_access_token
+from app.auth.security import create_access_token, create_refresh_token
 from app.bookings.history_model import BookingHistory
 from app.bookings.models import Booking
 from app.rides.models import Ride
 from app.users.models import User
 
 
+class TestTokenBasedAuth:
+    """Test token-based authentication with refresh tokens."""
+
+    def test_login_sets_access_and_refresh_cookies(self, client, db):
+        """Test login sets both access_token and refresh_token cookies."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"cookietest_{uuid4()}@test.com"
+        password = "testpassword123"
+
+        user = UserModel(
+            id=uuid4(),
+            name="Cookie Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert response.status_code == 200
+
+        # Check cookies are set
+        cookies = response.cookies
+        assert "access_token" in cookies
+        assert "refresh_token" in cookies
+
+        # Check cookie properties
+        access_cookie = cookies["access_token"]
+        refresh_cookie = cookies["refresh_token"]
+        assert access_cookie.httponly is True
+        assert access_cookie.secure is True
+        assert refresh_cookie.httponly is True
+        assert refresh_cookie.secure is True
+
+    def test_login_with_remember_me_extends_access_token(self, client, db):
+        """Test login with remember_me=true extends access token duration."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+        from app.config.settings import settings
+
+        email = f"remembertest_{uuid4()}@test.com"
+        password = "testpassword123"
+
+        user = UserModel(
+            id=uuid4(),
+            name="Remember Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post(
+            "/auth/login",
+            json={"email": email, "password": password, "remember_me": True},
+        )
+        assert response.status_code == 200
+
+        # With remember_me=True, max_age should be 30 days (in seconds)
+        access_cookie = response.cookies["access_token"]
+        # 30 days = 30 * 24 * 60 * 60 = 2592000 seconds
+        assert access_cookie.max_age == 30 * 24 * 60 * 60
+
+    def test_login_without_remember_me_short_access_token(self, client, db):
+        """Test login without remember_me uses short access token duration."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+        from app.config.settings import settings
+
+        email = f"shorttest_{uuid4()}@test.com"
+        password = "testpassword123"
+
+        user = UserModel(
+            id=uuid4(),
+            name="Short Token Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post(
+            "/auth/login",
+            json={"email": email, "password": password, "remember_me": False},
+        )
+        assert response.status_code == 200
+
+        # Without remember_me, max_age should be the default (15 min)
+        access_cookie = response.cookies["access_token"]
+        expected_max_age = settings.access_token_expire_minutes * 60
+        assert access_cookie.max_age == expected_max_age
+
+    def test_refresh_token_issues_new_tokens(self, client, db):
+        """Test refresh endpoint issues new access and refresh tokens."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"refresh_{uuid4()}@test.com"
+        password = "testpassword123"
+        user_id = uuid4()
+
+        user = UserModel(
+            id=user_id,
+            name="Refresh Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        # First login to get refresh token
+        login_response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert login_response.status_code == 200
+        refresh_token = login_response.cookies["refresh_token"]
+
+        # Call refresh endpoint
+        response = client.post("/auth/refresh")
+        assert response.status_code == 200
+        assert response.json().get("message") == "Tokens refreshed"
+
+        # Check new cookies are set
+        assert "access_token" in response.cookies
+        assert "refresh_token" in response.cookies
+
+    def test_refresh_without_token_fails(self, client):
+        """Test refresh endpoint returns 401 without refresh token."""
+        response = client.post("/auth/refresh")
+        assert response.status_code == 401
+
+    def test_refresh_with_invalid_token_fails(self, client):
+        """Test refresh endpoint returns 401 with invalid token."""
+        response = client.post(
+            "/auth/refresh", cookies={"refresh_token": "invalid_token"}
+        )
+        assert response.status_code == 401
+
+    def test_logout_clears_cookies(self, client, db):
+        """Test logout clears both access and refresh tokens."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"logout_{uuid4()}@test.com"
+        password = "testpassword123"
+
+        user = UserModel(
+            id=uuid4(),
+            name="Logout Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        # Login first
+        login_response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert login_response.status_code == 200
+
+        # Logout
+        response = client.post("/auth/logout")
+        assert response.status_code == 200
+        assert response.json().get("message") == "Logged out"
+
+        # Check cookies are cleared (max_age=0 means delete)
+        access_cookie = response.cookies["access_token"]
+        refresh_cookie = response.cookies["refresh_token"]
+        assert access_cookie.max_age == 0
+        assert refresh_cookie.max_age == 0
+
+    def test_access_token_has_correct_claims(self, client, db):
+        """Test access token contains correct claims."""
+        from jose import jwt
+
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password, ALGORITHM
+        from app.config.settings import settings
+
+        email = f"claims_{uuid4()}@test.com"
+        password = "testpassword123"
+
+        user = UserModel(
+            id=uuid4(),
+            name="Claims Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert response.status_code == 200
+
+        # Decode the access token
+        token = response.cookies["access_token"]
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
+
+        assert payload["sub"] == str(user.id)
+        assert payload["type"] == "access"
+        assert "exp" in payload
+
+    def test_refresh_token_has_correct_claims(self, client, db):
+        """Test refresh token contains correct claims."""
+        from jose import jwt
+
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password, ALGORITHM
+        from app.config.settings import settings
+
+        email = f"refreshclaims_{uuid4()}@test.com"
+        password = "testpassword123"
+
+        user = UserModel(
+            id=uuid4(),
+            name="Refresh Claims Test",
+            email=email,
+            password_hash=hash_password(password),
+            role="passenger",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
+        assert response.status_code == 200
+
+        # Decode the refresh token
+        token = response.cookies["refresh_token"]
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
+
+        assert payload["sub"] == str(user.id)
+        assert payload["type"] == "refresh"
+        assert "exp" in payload
+
+    def test_verify_otp_with_remember_me(self, client, db):
+        """Test OTP verification with remember_me sets long-lived cookies."""
+        from app.users.models import User as UserModel
+        from app.auth.security import hash_password
+
+        email = f"otpremember_{uuid4()}@test.com"
+        user = UserModel(
+            id=uuid4(),
+            name="OTP Remember",
+            email=email,
+            password_hash=hash_password("pass123"),
+            role="passenger",
+            is_email_verified=False,
+            otp_code="123456",
+            otp_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        )
+        db.add(user)
+        db.commit()
+
+        response = client.post(
+            "/auth/verify-otp",
+            json={"email": email, "otp": "123456", "remember_me": True},
+        )
+        assert response.status_code == 200
+
+        # With remember_me=True, should have extended access token
+        access_cookie = response.cookies["access_token"]
+        assert access_cookie.max_age == 30 * 24 * 60 * 60
+
+    def test_google_login_sets_cookies(self, client, db):
+        """Test Google login also sets access and refresh tokens."""
+        # This test verifies the Google auth flow sets cookies
+        # We mock the Google token verification
+        from unittest.mock import patch, MagicMock
+
+        email = f"google_{uuid4()}@test.com"
+
+        mock_id_info = {"email": email, "name": "Google Test User", "sub": "google123"}
+
+        with patch(
+            "app.auth.service.google_id_token.verify_oauth2_token",
+            return_value=mock_id_info,
+        ):
+            with patch("app.auth.service.google_requests.Request"):
+                response = client.post(
+                    "/auth/google",
+                    json={"id_token": "mock_google_token", "role": "passenger"},
+                )
+                assert response.status_code == 200
+
+                # Should have both cookies
+                assert "access_token" in response.cookies
+                assert "refresh_token" in response.cookies
+
+
 class TestAPIEndpoints:
     """Test API endpoints for correct HTTP responses."""
-    
+
     def test_health_check(self, client):
         """Test basic health check endpoint."""
         response = client.get("/healthz")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
-    
+
     def test_readiness_check(self, client):
         """Test readiness check endpoint."""
         response = client.get("/readyz")
         assert response.status_code == 200
         data = response.json()
         assert "status" in data
-    
+
     def test_metrics_endpoint(self, client):
         """Test metrics endpoint returns data."""
         response = client.get("/metrics")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
-    
+
     def test_signup_endpoint(self, client):
         """Test user signup returns 201 and prompts for OTP verification."""
-        response = client.post("/auth/signup", json={
-            "name": "Test User",
-            "email": f"testuser_{uuid4()}@test.com",
-            "password": "securepassword123",
-            "role": "passenger"
-        })
+        response = client.post(
+            "/auth/signup",
+            json={
+                "name": "Test User",
+                "email": f"testuser_{uuid4()}@test.com",
+                "password": "securepassword123",
+                "role": "passenger",
+            },
+        )
 
         assert response.status_code == 201
         data = response.json()
         # New flow: returns message + email, not user ID
         assert "message" in data
         assert "email" in data
-    
+
     def test_login_endpoint(self, client, db):
         """Test login works after email is verified."""
         from app.users.models import User as UserModel
@@ -68,10 +382,12 @@ class TestAPIEndpoints:
         db.commit()
 
         # Login should succeed
-        response = client.post("/auth/login", json={"email": email, "password": password})
+        response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
         assert response.status_code == 200
         assert response.json().get("message") == "Logged in"
-    
+
     def test_create_ride_as_driver(self, client, db):
         """Test creating a ride as a driver (pre-verified account)."""
         from app.users.models import User as UserModel
@@ -93,11 +409,14 @@ class TestAPIEndpoints:
         db.commit()
 
         # Login
-        login_response = client.post("/auth/login", json={"email": email, "password": password})
+        login_response = client.post(
+            "/auth/login", json={"email": email, "password": password}
+        )
         assert login_response.status_code == 200
 
         # Create ride
         from datetime import timezone
+
         future_time = datetime.now(timezone.utc) + timedelta(hours=5)
         response = client.post(
             "/rides/",
@@ -105,8 +424,8 @@ class TestAPIEndpoints:
                 "source": "City A",
                 "destination": "City B",
                 "departure_time": future_time.isoformat(),
-                "total_seats": 4
-            }
+                "total_seats": 4,
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -120,9 +439,11 @@ class TestAPIEndpoints:
             json={
                 "source": "City C",
                 "destination": "City D",
-                "departure_time": (future_time + timedelta(hours=1)).isoformat(), # Within 2 hours
-                "total_seats": 4
-            }
+                "departure_time": (
+                    future_time + timedelta(hours=1)
+                ).isoformat(),  # Within 2 hours
+                "total_seats": 4,
+            },
         )
         assert response_overlap.status_code == 403
         assert "within 2 hours" in response_overlap.json()["detail"].lower()
@@ -133,9 +454,11 @@ class TestAPIEndpoints:
             json={
                 "source": "City E",
                 "destination": "City F",
-                "departure_time": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
-                "total_seats": 4
-            }
+                "departure_time": (
+                    datetime.now(timezone.utc) - timedelta(hours=1)
+                ).isoformat(),
+                "total_seats": 4,
+            },
         )
         assert response_past.status_code == 403
         assert "past" in response_past.json()["detail"].lower()
@@ -148,6 +471,7 @@ class TestAPIEndpoints:
         email = f"otptest_{uuid4()}@test.com"
         # Create unverified user with known OTP
         from datetime import timezone as tz
+
         user = UserModel(
             id=uuid4(),
             name="OTP Test",
@@ -161,7 +485,9 @@ class TestAPIEndpoints:
         db.add(user)
         db.commit()
 
-        response = client.post("/auth/verify-otp", json={"email": email, "otp": "123456"})
+        response = client.post(
+            "/auth/verify-otp", json={"email": email, "otp": "123456"}
+        )
         assert response.status_code == 200
         assert "verified" in response.json().get("message", "").lower()
 
@@ -182,7 +508,9 @@ class TestAPIEndpoints:
         db.add(user)
         db.commit()
 
-        response = client.post("/auth/login", json={"email": email, "password": "pass123"})
+        response = client.post(
+            "/auth/login", json={"email": email, "password": "pass123"}
+        )
         assert response.status_code == 403  # forbidden until verified
 
     def test_resend_otp_endpoint(self, client, db):
@@ -211,7 +539,7 @@ class TestAPIEndpoints:
         """Test ride search endpoint."""
         # Just test that endpoint works and returns a list
         response = client.get("/rides/?source=A&destination=B")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -219,11 +547,13 @@ class TestAPIEndpoints:
     def test_complete_ride(self, client, db, sample_ride, sample_driver):
         """Test driver can mark their own ride as COMPLETED."""
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
 
         # Update ride to be in the past so it can be completed
         from datetime import datetime, timedelta, timezone
+
         sample_ride.departure_time = datetime.now(timezone.utc) - timedelta(hours=1)
         db.commit()
 
@@ -234,24 +564,32 @@ class TestAPIEndpoints:
     def test_cancel_ride(self, client, db, sample_ride, sample_driver):
         """Test driver can cancel their own ride without passengers anytime."""
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
 
         response = client.post(f"/rides/{sample_ride.id}/cancel")
         assert response.status_code == 200
         assert response.json()["status"] == "CANCELLED"
-        
+
         # Verify driver refund event was emitted
         from app.outbox.models import OutboxEvent
-        driver_refund_event = db.query(OutboxEvent).filter(
-            OutboxEvent.event_type == "ride.cancelled_by_driver_refund",
-            OutboxEvent.payload.op("->>")("ride_id") == str(sample_ride.id)
-        ).first()
-        
+
+        driver_refund_event = (
+            db.query(OutboxEvent)
+            .filter(
+                OutboxEvent.event_type == "ride.cancelled_by_driver_refund",
+                OutboxEvent.payload.op("->>")("ride_id") == str(sample_ride.id),
+            )
+            .first()
+        )
+
         assert driver_refund_event is not None
         assert driver_refund_event.payload["driver_id"] == str(sample_driver.id)
 
-    def test_cancel_ride_with_passengers_late_fails(self, client, db, sample_ride, sample_driver, sample_passenger):
+    def test_cancel_ride_with_passengers_late_fails(
+        self, client, db, sample_ride, sample_driver, sample_passenger
+    ):
         """Test driver cannot cancel late if they have passengers."""
         # 1. Book the ride for the passenger
         booking = Booking(
@@ -259,17 +597,19 @@ class TestAPIEndpoints:
             ride_id=sample_ride.id,
             passenger_id=sample_passenger.id,
             seats_booked=1,
-            status="CONFIRMED"
+            status="CONFIRMED",
         )
         db.add(booking)
-        
+
         # 2. Make the departure time exactly 1 hour from now (late cancellation)
         from datetime import datetime, timezone, timedelta
+
         sample_ride.departure_time = datetime.now(timezone.utc) + timedelta(hours=1)
         db.commit()
 
         # 3. Attempt driver cancellation
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
 
@@ -277,7 +617,9 @@ class TestAPIEndpoints:
         assert response.status_code == 400
         assert "within 1.5 hours" in response.json()["detail"].lower()
 
-    def test_cancel_ride_with_passengers_early_succeeds(self, client, db, sample_ride, sample_driver, sample_passenger):
+    def test_cancel_ride_with_passengers_early_succeeds(
+        self, client, db, sample_ride, sample_driver, sample_passenger
+    ):
         """Test driver can cancel early with passengers, but loses money."""
         # 1. Book the ride
         booking = Booking(
@@ -285,45 +627,60 @@ class TestAPIEndpoints:
             ride_id=sample_ride.id,
             passenger_id=sample_passenger.id,
             seats_booked=1,
-            status="CONFIRMED"
+            status="CONFIRMED",
         )
         db.add(booking)
-        
+
         # 2. Make the departure time exactly 2 hours from now (early cancellation)
         from datetime import datetime, timezone, timedelta
+
         sample_ride.departure_time = datetime.now(timezone.utc) + timedelta(hours=2)
         db.commit()
 
         # 3. Attempt driver cancellation
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
 
         response = client.post(f"/rides/{sample_ride.id}/cancel")
         assert response.status_code == 200
-        
+
         # 4. Verify cascade cancellation for the booking
         db.refresh(booking)
         assert booking.status == "CANCELLED"
-        
+
         # 5. Verify passenger refund outbox event
         from app.outbox.models import OutboxEvent
-        passenger_refund_event = db.query(OutboxEvent).filter(
-            OutboxEvent.event_type == "booking.cancelled_by_driver",
-            OutboxEvent.payload.op("->>")("booking_id") == str(booking.id)
-        ).first()
-        
+
+        passenger_refund_event = (
+            db.query(OutboxEvent)
+            .filter(
+                OutboxEvent.event_type == "booking.cancelled_by_driver",
+                OutboxEvent.payload.op("->>")("booking_id") == str(booking.id),
+            )
+            .first()
+        )
+
         assert passenger_refund_event is not None
-        assert passenger_refund_event.payload["passenger_id"] == str(sample_passenger.id)
+        assert passenger_refund_event.payload["passenger_id"] == str(
+            sample_passenger.id
+        )
 
         # 6. Verify driver did NOT get a refund
-        driver_refund_event = db.query(OutboxEvent).filter(
-            OutboxEvent.event_type == "ride.cancelled_by_driver_refund",
-            OutboxEvent.payload.op("->>")("ride_id") == str(sample_ride.id)
-        ).first()
+        driver_refund_event = (
+            db.query(OutboxEvent)
+            .filter(
+                OutboxEvent.event_type == "ride.cancelled_by_driver_refund",
+                OutboxEvent.payload.op("->>")("ride_id") == str(sample_ride.id),
+            )
+            .first()
+        )
         assert driver_refund_event is None
 
-    def test_passenger_cannot_cancel_past_ride(self, client, db, sample_ride, sample_passenger):
+    def test_passenger_cannot_cancel_past_ride(
+        self, client, db, sample_ride, sample_passenger
+    ):
         """Test passenger cannot cancel a ride after it has departed."""
         # 1. Book the ride
         booking = Booking(
@@ -331,27 +688,30 @@ class TestAPIEndpoints:
             ride_id=sample_ride.id,
             passenger_id=sample_passenger.id,
             seats_booked=1,
-            status="CONFIRMED"
+            status="CONFIRMED",
         )
         db.add(booking)
-        
+
         # 2. Make the departure time in the past
         from datetime import datetime, timezone, timedelta
+
         sample_ride.departure_time = datetime.now(timezone.utc) - timedelta(hours=1)
         db.commit()
 
         # 3. Attempt passenger cancellation
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_passenger.id))
         client.cookies.set("access_token", token)
 
         response = client.post(f"/bookings/{booking.id}/cancel")
         assert response.status_code == 400
         assert "departed" in response.json()["detail"].lower()
-        
+
     def test_cancel_ride_wrong_driver(self, client, db, sample_ride, sample_passenger):
         """Test that a non-owner cannot cancel someone else's ride."""
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_passenger.id))
         client.cookies.set("access_token", token)
 
@@ -361,6 +721,7 @@ class TestAPIEndpoints:
     def test_driver_cannot_book_own_ride(self, client, db, sample_ride, sample_driver):
         """Test that a driver cannot book their own ride."""
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_driver.id))
         client.cookies.set("access_token", token)
 
@@ -376,6 +737,7 @@ class TestAPIEndpoints:
     def test_passenger_double_booking(self, client, db, sample_ride, sample_passenger):
         """Test passenger cannot book two overlapping rides."""
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_passenger.id))
         client.cookies.set("access_token", token)
 
@@ -390,6 +752,7 @@ class TestAPIEndpoints:
         # Create a second ride at the same time and try to book it
         from app.users.models import User as UserModel
         from app.auth.security import hash_password
+
         email = f"driver2_{uuid4()}@test.com"
         driver2 = UserModel(
             id=uuid4(),
@@ -407,7 +770,7 @@ class TestAPIEndpoints:
             driver_id=driver2.id,
             source="A",
             destination="B",
-            departure_time=sample_ride.departure_time + timedelta(hours=1), # overlaps
+            departure_time=sample_ride.departure_time + timedelta(hours=1),  # overlaps
             total_seats=4,
             available_seats=4,
         )
@@ -426,16 +789,20 @@ class TestAPIEndpoints:
         """Test that endpoints require authentication."""
         # Clear any cookies first
         client.cookies.clear()
-        
+
         from datetime import timezone
+
         # Try to create ride without auth
-        response = client.post("/rides/", json={
-            "source": "A",
-            "destination": "B",
-            "departure_time": datetime.now(timezone.utc).isoformat(),
-            "total_seats": 4
-        })
-        
+        response = client.post(
+            "/rides/",
+            json={
+                "source": "A",
+                "destination": "B",
+                "departure_time": datetime.now(timezone.utc).isoformat(),
+                "total_seats": 4,
+            },
+        )
+
         assert response.status_code == 401
 
     def test_analytics_overview_endpoint(self, client):
@@ -451,20 +818,19 @@ class TestAPIEndpoints:
     def test_update_user_role(self, client, db, sample_passenger):
         """Test a user can change their active profile role."""
         from app.auth.security import create_access_token
+
         token = create_access_token(subject=str(sample_passenger.id))
         client.cookies.set("access_token", token)
-        
+
         # Current role is "passenger", change to "driver"
-        response = client.patch(
-            "/users/me/role",
-            json={"role": "driver"}
-        )
+        response = client.patch("/users/me/role", json={"role": "driver"})
         assert response.status_code == 200
         assert response.json()["role"] == "driver"
-        
+
         # Verify in DB (expire cache first since API used a different DB session)
         db.expire_all()
         from app.users.models import User
+
         user_in_db = db.query(User).filter(User.id == sample_passenger.id).first()
         assert user_in_db.role == "driver"
 
@@ -489,6 +855,7 @@ class TestAPIEndpoints:
         db.flush()
 
         from datetime import timezone
+
         ride = Ride(
             id=uuid4(),
             driver_id=driver.id,

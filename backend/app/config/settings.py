@@ -11,21 +11,21 @@ class Settings(BaseSettings):
     )
 
     database_url: str = Field(validation_alias="DATABASE_URL")
-    jwt_secret: str = Field(validation_alias="JWT_SECRET")
     redis_url: str = Field(validation_alias="REDIS_URL")
     kafka_bootstrap_servers: str = Field(validation_alias="KAFKA_BOOTSTRAP_SERVERS")
+    # Auth
+    jwt_secret: str = Field(validation_alias="JWT_SECRET")
+    google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     google_maps_api_key: str = Field(default="", validation_alias="GOOGLE_MAPS_API_KEY")
-
-    # Email (AWS SES SMTP)
+    otp_expiry_minutes: int = Field(default=10, validation_alias="OTP_EXPIRY_MINUTES")
+    
+    # Email (SMTP)
     smtp_server: str = Field(default="", validation_alias="SMTP_SERVER")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
     smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
-    smtp_from_email: str = Field(default="noreply@carpooling.app", validation_alias="SMTP_FROM_EMAIL")
-    otp_expiry_minutes: int = Field(default=10, validation_alias="OTP_EXPIRY_MINUTES")
+    smtp_from_email: str = Field(default="noreply@crocride.com", validation_alias="SMTP_FROM_EMAIL")
 
-    # Google OAuth
-    google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",

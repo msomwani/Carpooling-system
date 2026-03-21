@@ -17,7 +17,7 @@ router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
 
 
-@router.post("/", response_model=BookingResponse)
+@router.post("", response_model=BookingResponse)
 def create_booking(
     payload: BookingCreateRequest,
     request: Request,

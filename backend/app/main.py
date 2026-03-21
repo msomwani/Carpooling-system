@@ -12,12 +12,11 @@ from app.common.redis import redis_client
 from app.common.kafka import producer
 from app.common.metrics import get_metrics
 
-from app.auth.router import router as auth_router
 from app.users.router import router as users_router
 from app.rides.router import router as rides_router
 from app.bookings.router import router as booking_router
 from app.analytics.router import router as analytics_router
-from app.maps.router import router as maps_router
+from app.auth.router import router as auth_router
 from app.config.settings import settings
 
 setup_logging()
@@ -37,7 +36,6 @@ app.include_router(users_router)
 app.include_router(booking_router)
 app.include_router(rides_router)
 app.include_router(analytics_router)
-app.include_router(maps_router)
 
 # Serve static frontend files (maps.html, etc.)
 _static_dir = Path(__file__).resolve().parent / "static"

@@ -24,6 +24,11 @@ class RideService:
         """
         window_start = new_departure - timedelta(hours=2)
         window_end = new_departure + timedelta(hours=2)
+        
+        # Strip tzinfo for querying PostgreSQL if new_departure is aware
+        # but the db might store it strangely, or keep it aware if using timezone=True
+        # Safest is just to compare directly as the engine handles timezone translation at driver level
+
 
         # 1. Check if user is DRIVING an overlapping ACTIVE ride
         overlapping_driving = (
@@ -72,7 +77,10 @@ class RideService:
         # Validate temporal constraints
         if departure_time:
             now = datetime.now(timezone.utc)
-            if departure_time < now:
+            dept = departure_time
+            if dept.tzinfo is None:
+                dept = dept.replace(tzinfo=timezone.utc)
+            if dept < now:
                 raise ValueError("Cannot create a ride in the past")
 
             # Check for double-booking overlaps
@@ -119,13 +127,26 @@ class RideService:
         return ride
 
     @staticmethod
+    def get_driver_rides(db: Session, driver_id: str):
+        """Fetch all rides created by the given driver, ordered by descending departure time."""
+        return (
+            db.query(Ride)
+            .filter(Ride.driver_id == driver_id)
+            .order_by(Ride.departure_time.desc().nulls_last())
+            .all()
+        )
+
+    @staticmethod
     def complete_ride(db: Session, *, ride_id: str, driver_id: str) -> Ride:
         """Mark a ride as COMPLETED. Only the owning driver can do this."""
         ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
         
         if ride.departure_time:
             now = datetime.now(timezone.utc)
-            if ride.departure_time > now:
+            dept = ride.departure_time
+            if dept.tzinfo is None:
+                dept = dept.replace(tzinfo=timezone.utc)
+            if dept > now:
                 raise ValueError("Cannot complete a ride before its departure time")
                 
         ride.status = RideStatus.COMPLETED
@@ -160,7 +181,10 @@ class RideService:
 
         # 2. Check penalty logic
         if ride.departure_time:
-            time_until_departure = ride.departure_time - now
+            dept = ride.departure_time
+            if dept.tzinfo is None:
+                dept = dept.replace(tzinfo=timezone.utc)
+            time_until_departure = dept - now
             is_late_cancellation = time_until_departure < timedelta(hours=1.5)
 
             if has_passengers and is_late_cancellation:
@@ -250,6 +274,7 @@ class RideService:
                 lng_col.isnot(None),
                 Ride.available_seats > 0,
                 Ride.status == RideStatus.ACTIVE,   # ← only ACTIVE rides
+                Ride.departure_time > sa_func.now(), # ← ONLY FUTURE RIDES
                 distance <= radius_km,
             )
             .all()
@@ -273,6 +298,7 @@ class RideService:
             Ride.destination == destination,
             Ride.available_seats > 0,
             Ride.status == RideStatus.ACTIVE,
+            Ride.departure_time > sa_func.now(),
         ).all()
 
         result = [RideResponse.model_validate(r) for r in rides]
