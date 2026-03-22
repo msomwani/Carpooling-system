@@ -195,7 +195,7 @@ export default function LandingPage() {
                     className="pl-10 h-8 bg-transparent border-none focus-visible:ring-0 text-base cursor-pointer"
                     value={searchTerm}
                     readOnly
-                    onClick={() => router.push('/rides')}
+                    onClick={() => router.push(role === "driver" ? "/rides/create" : "/rides")}
                   />
                 </div>
                 {/* {role === "driver" && (

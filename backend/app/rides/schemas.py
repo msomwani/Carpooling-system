@@ -16,6 +16,7 @@ class RideCreateRequest(BaseModel):
 
     departure_time: datetime
     total_seats: int = Field(gt=0)
+    vehicle_id: UUID
 
     @model_validator(mode="after")
     def validate_coordinate_pairs(self):
@@ -43,3 +44,4 @@ class RideResponse(BaseModel):
     total_seats: int
     available_seats: int
     status: Literal["ACTIVE", "COMPLETED", "CANCELLED"] = "ACTIVE"
+    vehicle_id: UUID | None = None

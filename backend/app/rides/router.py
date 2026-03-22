@@ -24,7 +24,11 @@ def create_ride(
         ride = RideService.create_ride(
             db=db,
             driver_id=user_id,
-            **payload.model_dump()
+            departure_time=payload.departure_time,
+            total_seats=payload.total_seats,
+            vehicle_id=payload.vehicle_id,
+            source=payload.source,
+            destination=payload.destination
         )
         return ride
     except ValueError as e:

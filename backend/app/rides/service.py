@@ -73,7 +73,18 @@ class RideService:
         destination_lng: float | None = None,
         departure_time=None,
         total_seats: int,
+        vehicle_id: str | None = None,
     ) -> Ride:
+        from app.vehicles.models import Vehicle
+        
+        # 0. Verify vehicle ownership
+        if vehicle_id:
+            vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+            if not vehicle:
+                raise ValueError("Vehicle not found")
+            if str(vehicle.owner_id) != str(driver_id):
+                raise PermissionError("You do not own this vehicle")
+
         # Validate temporal constraints
         if departure_time:
             now = datetime.now(timezone.utc)
@@ -98,6 +109,7 @@ class RideService:
             departure_time=departure_time,
             total_seats=total_seats,
             available_seats=total_seats,
+            vehicle_id=vehicle_id,
             status=RideStatus.ACTIVE,
         )
 
