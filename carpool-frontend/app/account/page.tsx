@@ -27,11 +27,14 @@ import {
   Settings,
   ChevronRight,
   Bell,
-  CreditCard
+  CreditCard,
+  Plus,
+  Trash2,
+  Car
 } from "lucide-react"
 
 export default function AccountPage() {
-  const { user, isLoading, logout } = useAuth()
+  const { user, isLoading, logout, getAuthHeaders } = useAuth()
   const router = useRouter()
 
   const [isEditing, setIsEditing] = useState(false)
@@ -41,6 +44,18 @@ export default function AccountPage() {
     phone: "",
     age: "24" // Default mock age
   })
+
+  const [vehicles, setVehicles] = useState<any[]>([])
+  const [isAddingVehicle, setIsAddingVehicle] = useState(false)
+  const [newVehicle, setNewVehicle] = useState({
+    make: "",
+    model: "",
+    color: "",
+    license_plate: "",
+    type: "CAR"
+  })
+  const [isVehicleLoading, setIsVehicleLoading] = useState(false)
+  const [vehicleError, setVehicleError] = useState<string | null>(null)
 
   // Mock analytics data
   const stats = [
@@ -63,6 +78,12 @@ export default function AccountPage() {
     }
   }, [user, isLoading, router])
 
+  useEffect(() => {
+    if (user) {
+      fetchVehicles()
+    }
+  }, [user])
+
   if (isLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -77,6 +98,76 @@ export default function AccountPage() {
   const handleSave = () => {
     console.log("Profile update requested:", profile)
     setIsEditing(false)
+  }
+
+  const fetchVehicles = async () => {
+    try {
+      const response = await fetch("/api/vehicles/me", {
+        headers: getAuthHeaders()
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setVehicles(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch vehicles:", error)
+    }
+  }
+
+  const validateLicensePlate = (plate: string) => {
+    const normalized = plate.replace(/[^A-Z0-9]/gi, "").toUpperCase()
+    const pattern = /^[A-Z]{2}[0-9]{2}[A-Z]{0,2}[0-9]{4}$/
+    if (plate.length > 0 && !pattern.test(normalized)) {
+      return "Invalid format (e.g. GJ06BS4147)"
+    }
+    return null
+  }
+
+  const handleAddVehicle = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const error = validateLicensePlate(newVehicle.license_plate)
+    if (error) {
+      setVehicleError(error)
+      return
+    }
+
+    setIsVehicleLoading(true)
+    setVehicleError(null)
+    try {
+      const response = await fetch("/api/vehicles", {
+        method: "POST",
+        headers: {
+          ...getAuthHeaders(),
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(newVehicle)
+      })
+
+      if (response.ok) {
+        const added = await response.json()
+        setVehicles([...vehicles, added])
+        setIsAddingVehicle(false)
+        setNewVehicle({ make: "", model: "", color: "", license_plate: "", type: "CAR" })
+      }
+    } catch (error) {
+      console.error("Failed to add vehicle:", error)
+    } finally {
+      setIsVehicleLoading(false)
+    }
+  }
+
+  const handleDeleteVehicle = async (id: string) => {
+    try {
+      const response = await fetch(`/api/vehicles/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders()
+      })
+      if (response.ok) {
+        setVehicles(vehicles.filter((v) => v.id !== id))
+      }
+    } catch (error) {
+      console.error("Failed to delete vehicle:", error)
+    }
   }
 
   return (
@@ -188,6 +279,143 @@ export default function AccountPage() {
               </div>
             </div>
           </Card>
+        </section>
+
+        {/* Section 3: My Vehicles */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between px-2">
+            <div>
+              <h2 className="text-xl font-black tracking-tight">My Vehicles</h2>
+              <p className="text-muted-foreground text-xs font-medium">Add vehicles to offer rides as a driver</p>
+            </div>
+            {!isAddingVehicle && (
+              <Button onClick={() => setIsAddingVehicle(true)} variant="ghost" size="sm" className="h-8 rounded-full text-xs font-bold text-primary hover:bg-primary/5">
+                <Plus className="h-3.5 w-3.5 mr-1" /> Add
+              </Button>
+            )}
+          </div>
+
+          {isAddingVehicle && (
+            <Card className="rounded-[2rem] border-2 border-primary/20 shadow-sm bg-background p-6 animate-in zoom-in-95 duration-200">
+              <form onSubmit={handleAddVehicle} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Make</Label>
+                    <Input 
+                      placeholder="e.g. Maruti" 
+                      value={newVehicle.make} 
+                      onChange={(e) => setNewVehicle({...newVehicle, make: e.target.value})}
+                      className="rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Model</Label>
+                    <Input 
+                      placeholder="e.g. Swift" 
+                      value={newVehicle.model} 
+                      onChange={(e) => setNewVehicle({...newVehicle, model: e.target.value})}
+                      className="rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Color</Label>
+                    <Input 
+                      placeholder="e.g. White" 
+                      value={newVehicle.color} 
+                      onChange={(e) => setNewVehicle({...newVehicle, color: e.target.value})}
+                      className="rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Number Plate</Label>
+                    <Input 
+                      placeholder="GJ-06..." 
+                      value={newVehicle.license_plate} 
+                      onChange={(e) => {
+                        setNewVehicle({...newVehicle, license_plate: e.target.value})
+                        setVehicleError(validateLicensePlate(e.target.value))
+                      }}
+                      className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none uppercase ${vehicleError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                      required
+                    />
+                    {vehicleError && <p className="text-[10px] font-bold text-destructive ml-1 animate-in fade-in slide-in-from-top-1">{vehicleError}</p>}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Vehicle Type</Label>
+                  <div className="flex gap-4">
+                    {["CAR", "BIKE"].map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setNewVehicle({...newVehicle, type})}
+                        className={`flex-1 h-10 rounded-xl text-xs font-bold transition-all border-2 ${
+                          newVehicle.type === type 
+                            ? "border-primary bg-primary/5 text-primary" 
+                            : "border-muted/30 text-muted-foreground hover:border-muted"
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <Button type="button" variant="ghost" className="flex-1 rounded-xl h-11 text-xs font-bold" onClick={() => setIsAddingVehicle(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="flex-1 rounded-xl h-11 text-xs font-bold" disabled={isVehicleLoading || !!vehicleError}>
+                    {isVehicleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Register Vehicle"}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+          )}
+
+          <div className="grid gap-3">
+            {vehicles.length === 0 && !isAddingVehicle ? (
+              <div className="p-8 text-center rounded-[2rem] border border-dashed border-muted-foreground/20 bg-muted/5">
+                <Car className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="text-muted-foreground text-xs font-medium">No vehicles registered yet</p>
+              </div>
+            ) : (
+              vehicles.map((v) => (
+                <Card key={v.id} className="rounded-3xl border shadow-sm bg-background p-4 group hover:border-primary/30 transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-muted/30 rounded-2xl flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                      <Car className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-black tracking-tight">{v.make} {v.model}</p>
+                        <Badge variant="secondary" className="bg-muted text-[8px] uppercase font-black px-1.5 py-0 h-4 rounded-md tracking-tighter opacity-70">
+                          {v.type}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground">
+                        <span className="uppercase">{v.color}</span>
+                        <span className="opacity-20">•</span>
+                        <span className="uppercase tracking-widest">{v.license_plate}</span>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-9 w-9 rounded-xl text-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-colors group-hover:text-destructive" 
+                      onClick={() => handleDeleteVehicle(v.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
         </section>
 
         {/* Logout Button - Positioned above nav bar area */}

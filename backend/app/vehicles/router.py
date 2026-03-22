@@ -1,0 +1,52 @@
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.orm import Session
+
+from app.common.db import get_db
+from app.vehicles.schemas import VehicleCreateRequest, VehicleResponse
+from app.vehicles.service import VehicleService
+from app.auth.dependencies import get_current_user_id
+
+router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
+
+@router.post("", response_model=VehicleResponse)
+def add_vehicle(
+    payload: VehicleCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    try:
+        vehicle = VehicleService.add_vehicle(
+            db=db,
+            owner_id=user_id,
+            make=payload.make,
+            model=payload.model,
+            color=payload.color,
+            license_plate=payload.license_plate,
+            vehicle_type=payload.type
+        )
+        return vehicle
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/me", response_model=list[VehicleResponse])
+def get_my_vehicles(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    return VehicleService.get_my_vehicles(db, owner_id=user_id)
+
+@router.delete("/{vehicle_id}")
+def delete_vehicle(
+    vehicle_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    try:
+        VehicleService.delete_vehicle(db, vehicle_id=vehicle_id, owner_id=user_id)
+        return Response(status_code=204)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
