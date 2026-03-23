@@ -20,6 +20,7 @@ from app.notifications import models as notifications_models
 from app.outbox import models as outbox_models
 from app.rides import models as rides_models
 from app.users import models as users_models
+from app.vehicles import models as vehicles_models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

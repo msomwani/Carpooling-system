@@ -17,6 +17,7 @@ type Ride = {
   destination: string
   departure_time: string
   available_seats: number
+  price_per_seat: number
   total_seats: number
   status: "ACTIVE" | "COMPLETED" | "CANCELLED"
 }
@@ -210,7 +211,7 @@ export default function RidesPage() {
                       <div className="flex items-center gap-3 mb-3">
                         <Badge variant="secondary">{ride.status}</Badge>
                         <span className="text-sm text-muted-foreground">
-                          {ride.available_seats}/{ride.total_seats} seats
+                          {ride.available_seats}/{ride.total_seats} seats • ₹{ride.price_per_seat}
                         </span>
                       </div>
                       <div className="flex items-center gap-4">

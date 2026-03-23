@@ -57,6 +57,7 @@ function CreateRideContent() {
     destination: "",
     departure_time: "",
     total_seats: 4,
+    price_per_seat: 100,
     source_lat: 0,
     source_lng: 0,
     destination_lat: 0,
@@ -192,6 +193,7 @@ function CreateRideContent() {
       destination_lng: formData.destination_lng,
       departure_time: new Date(formData.departure_time).toISOString(),
       total_seats: Number(formData.total_seats),
+      price_per_seat: Number(formData.price_per_seat),
       vehicle_id: selectedVehicleId,
     }
 
@@ -322,16 +324,26 @@ function CreateRideContent() {
                   />
                 </div>
 
-                <div className="grid gap-2">
-                  <Label>Seats Available</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="8"
-                    defaultValue="4"
-                    onChange={(e) => setFormData({ ...formData, total_seats: parseInt(e.target.value) })}
-                  />
-                </div>
+                  <div className="grid gap-2">
+                    <Label>Seats Available</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="8"
+                      defaultValue="4"
+                      onChange={(e) => setFormData({ ...formData, total_seats: parseInt(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Price per Seat (₹)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={formData.price_per_seat}
+                      onChange={(e) => setFormData({ ...formData, price_per_seat: parseInt(e.target.value) })}
+                    />
+                  </div>
 
                 <div className="grid gap-2">
                   <Label className="flex items-center gap-2">

@@ -26,6 +26,7 @@ type DriverRide = {
   destination: string
   departure_time: string
   available_seats: number
+  price_per_seat: number
   total_seats: number
   status: "ACTIVE" | "COMPLETED" | "CANCELLED"
 }
@@ -244,7 +245,7 @@ export default function BookingsPage() {
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-1.5">
                           <Badge variant="outline" className="rounded-lg font-bold border-primary/20 text-primary">
-                            {ride.available_seats}/{ride.total_seats} Seats
+                            {ride.available_seats}/{ride.total_seats} Seats • ₹{ride.price_per_seat}
                           </Badge>
                         </div>
                       </div>

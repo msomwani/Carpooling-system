@@ -26,6 +26,7 @@ def create_ride(
             driver_id=user_id,
             departure_time=payload.departure_time,
             total_seats=payload.total_seats,
+            price_per_seat=payload.price_per_seat,
             vehicle_id=payload.vehicle_id,
             source=payload.source,
             destination=payload.destination

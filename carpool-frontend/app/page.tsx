@@ -35,6 +35,7 @@ type Ride = {
   destination: string
   departure_time: string
   available_seats: number
+  price_per_seat: number
   total_seats: number
   status: "ACTIVE" | "COMPLETED" | "CANCELLED"
 }
@@ -245,7 +246,10 @@ export default function LandingPage() {
                       <CardHeader className="pb-3 bg-muted/30">
                         <div className="flex justify-between items-center bg-background/50 backdrop-blur-sm p-2 rounded-2xl">
                           <Badge variant="secondary" className="rounded-xl px-3 bg-primary/10 text-primary border-none">{ride.available_seats} seats free</Badge>
-                          <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">{ride.status}</span>
+                          <div className="flex flex-col items-end">
+                            <span className="text-sm font-black text-primary">₹{ride.price_per_seat}</span>
+                            <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">{ride.status}</span>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent className="pt-4 pb-4">
@@ -275,21 +279,25 @@ export default function LandingPage() {
                               </span>
                             </div>
                             {bookingRide === ride.id ? (
-                              <div className="flex flex-col gap-2 items-end">
-                                <div className="flex items-center gap-2">
-                                  <Input 
-                                    type="number" 
-                                    min={1} 
-                                    max={ride.available_seats}
-                                    value={bookingSeats}
-                                    onChange={(e) => setBookingSeats(Number(e.target.value))}
-                                    className="w-14 h-8 rounded-xl text-center font-bold px-1"
-                                  />
-                                  <Button size="sm" className="rounded-xl px-4 font-bold bg-green-600 hover:bg-green-700" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
-                                  <Button size="sm" variant="ghost" className="rounded-xl px-2" onClick={() => setBookingRide(null)}>X</Button>
+                                <div className="flex flex-col gap-2 items-end">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex flex-col items-end mr-2">
+                                      <span className="text-[10px] uppercase font-bold text-muted-foreground">Total</span>
+                                      <span className="text-sm font-black text-primary">₹{bookingSeats * (ride.price_per_seat || 0)}</span>
+                                    </div>
+                                    <Input 
+                                      type="number" 
+                                      min={1} 
+                                      max={ride.available_seats}
+                                      value={bookingSeats}
+                                      onChange={(e) => setBookingSeats(Number(e.target.value))}
+                                      className="w-14 h-8 rounded-xl text-center font-bold px-1"
+                                    />
+                                    <Button size="sm" className="rounded-xl px-4 font-bold bg-green-600 hover:bg-green-700" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
+                                    <Button size="sm" variant="ghost" className="rounded-xl px-2" onClick={() => setBookingRide(null)}>X</Button>
+                                  </div>
+                                  {bookingError && <span className="text-xs text-destructive max-w-[200px] text-right leading-tight">{bookingError}</span>}
                                 </div>
-                                {bookingError && <span className="text-xs text-destructive max-w-[200px] text-right leading-tight">{bookingError}</span>}
-                              </div>
                             ) : (
                               <Button size="sm" className="rounded-xl px-6 font-bold" onClick={() => handleBookClick(ride.id)} disabled={ride.available_seats < 1}>
                                 Book Base

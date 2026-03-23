@@ -16,6 +16,7 @@ class RideCreateRequest(BaseModel):
 
     departure_time: datetime
     total_seats: int = Field(gt=0)
+    price_per_seat: int = Field(ge=0)
     vehicle_id: UUID
 
     @model_validator(mode="after")
@@ -43,5 +44,6 @@ class RideResponse(BaseModel):
     departure_time: datetime
     total_seats: int
     available_seats: int
+    price_per_seat: int
     status: Literal["ACTIVE", "COMPLETED", "CANCELLED"] = "ACTIVE"
     vehicle_id: UUID | None = None
