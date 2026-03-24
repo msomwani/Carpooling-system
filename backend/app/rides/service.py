@@ -104,9 +104,11 @@ class RideService:
             source=source,
             source_lat=source_lat,
             source_lng=source_lng,
+            source_location=f"POINT({source_lng} {source_lat})" if source_lat is not None else None,
             destination=destination,
             destination_lat=destination_lat,
             destination_lng=destination_lng,
+            destination_location=f"POINT({destination_lng} {destination_lat})" if destination_lat is not None else None,
             departure_time=departure_time,
             total_seats=total_seats,
             available_seats=total_seats,
@@ -283,39 +285,24 @@ class RideService:
     ) -> list[Ride]:
         """
         Find ACTIVE rides whose source or destination coordinates fall within
-        *radius_km* of the given (lat, lng) using the Haversine formula.
+        *radius_km* of the given (lat, lng) using PostGIS ST_DWithin.
         """
         if role == "source":
-            lat_col = Ride.source_lat
-            lng_col = Ride.source_lng
+            loc_col = Ride.source_location
         else:
-            lat_col = Ride.destination_lat
-            lng_col = Ride.destination_lng
+            loc_col = Ride.destination_location
 
-        # Haversine distance expression (returns km)
-        lat_rad = sa_func.radians(cast(lat, Float))
-        lng_rad = sa_func.radians(cast(lng, Float))
-
-        dlat = sa_func.radians(lat_col) - lat_rad
-        dlng = sa_func.radians(lng_col) - lng_rad
-
-        a = (
-            sa_func.power(sa_func.sin(dlat / 2), 2)
-            + sa_func.cos(lat_rad)
-            * sa_func.cos(sa_func.radians(lat_col))
-            * sa_func.power(sa_func.sin(dlng / 2), 2)
-        )
-        distance = _EARTH_RADIUS_KM * 2 * sa_func.atan2(sa_func.sqrt(a), sa_func.sqrt(1 - a))
-
+        # PostGIS ST_DWithin: radius_km * 1000 for meters
+        search_point = f"POINT({lng} {lat})"
+        
         return (
             db.query(Ride)
             .filter(
-                lat_col.isnot(None),
-                lng_col.isnot(None),
+                loc_col.isnot(None),
                 Ride.available_seats > 0,
-                Ride.status == RideStatus.ACTIVE,   # ← only ACTIVE rides
-                Ride.departure_time > sa_func.now(), # ← ONLY FUTURE RIDES
-                distance <= radius_km,
+                Ride.status == RideStatus.ACTIVE,
+                Ride.departure_time > sa_func.now(),
+                sa_func.ST_DWithin(loc_col, search_point, radius_km * 1000),
             )
             .all()
         )

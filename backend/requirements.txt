@@ -53,3 +53,4 @@ razorpay==1.4.1
 python-jose==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
+GeoAlchemy2==0.17.1

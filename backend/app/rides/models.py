@@ -2,6 +2,7 @@ import uuid
 from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
+from geoalchemy2 import Geography
 import enum
 
 from app.common.db import Base
@@ -23,10 +24,12 @@ class Ride(Base):
     source = Column(String(255), nullable=False)
     source_lat = Column(Float, nullable=True)
     source_lng = Column(Float, nullable=True)
+    source_location = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
 
     destination = Column(String(255), nullable=False)
     destination_lat = Column(Float, nullable=True)
     destination_lng = Column(Float, nullable=True)
+    destination_location = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
 
     departure_time = Column(DateTime(timezone=True), nullable=False)
 

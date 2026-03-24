@@ -1,5 +1,7 @@
 -- Enable UUID generation
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- Enable PostGIS
+CREATE EXTENSION IF NOT EXISTS "postgis";
 
 -- Users table
 CREATE TABLE users (
@@ -29,6 +31,8 @@ CREATE TABLE rides (
     destination VARCHAR(255) NOT NULL,
     destination_lat DOUBLE PRECISION,
     destination_lng DOUBLE PRECISION,
+    source_location GEOGRAPHY(POINT, 4326),
+    destination_location GEOGRAPHY(POINT, 4326),
     departure_time TIMESTAMP NOT NULL,
     total_seats INTEGER NOT NULL CHECK (total_seats > 0),
     available_seats INTEGER NOT NULL CHECK (available_seats >= 0),
@@ -69,6 +73,8 @@ CREATE INDEX idx_bookings_status ON bookings(status);
 
 CREATE INDEX idx_rides_source_coords ON rides(source_lat, source_lng);
 CREATE INDEX idx_rides_destination_coords ON rides(destination_lat, destination_lng);
+CREATE INDEX idx_rides_source_location ON rides USING GIST (source_location);
+CREATE INDEX idx_rides_destination_location ON rides USING GIST (destination_location);
 
 -- Partial unique index: only enforces uniqueness for CONFIRMED bookings
 -- This allows multiple CANCELLED bookings but only one CONFIRMED booking per passenger per ride
