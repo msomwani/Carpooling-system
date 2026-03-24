@@ -88,12 +88,12 @@ export default function RidesPage() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/">
-              <div className="relative w-8 h-8">
+              <div className="relative w-12 h-12">
                 <Image
                   src="/croc_mascot(y).png"
                   alt="Croc"
                   fill
-                  sizes="32px"
+                  sizes="48px"
                   className="object-contain"
                 />
               </div>

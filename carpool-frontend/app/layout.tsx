@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
-  const isAuthPage = pathname === "/login";
+  // const isAuthPage = pathname === "/login";
 
   return (
     <html lang="en">
@@ -36,8 +36,8 @@ export default function RootLayout({
         <GoogleOAuthProvider clientId="403477193934-b7cahbs2e3kkobclbno63upat04c0at5.apps.googleusercontent.com">
           <AuthProvider>
             <RoleProvider>
-              <main className={isAuthPage ? "" : "pb-16"}>{children}</main>
-              {!isAuthPage && <BottomNav />}
+              <main className="pb-16">{children}</main>
+              <BottomNav />
             </RoleProvider>
           </AuthProvider>
         </GoogleOAuthProvider>

@@ -176,12 +176,12 @@ export default function AccountPage() {
       <header className="bg-background/80 backdrop-blur-xl border-b sticky top-0 z-50 px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <div className="relative w-7 h-7">
+            <div className="relative w-12 h-12">
               <Image
                 src="/croc_mascot(y).png"
                 alt="Croc"
                 fill
-                sizes="28px"
+                sizes="48px"
                 className="object-contain"
               />
             </div>

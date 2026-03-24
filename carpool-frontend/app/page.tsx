@@ -106,12 +106,12 @@ export default function LandingPage() {
       <header className="sticky top-0 bg-background/80 backdrop-blur-md z-40 border-b">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative w-8 h-8">
+            <div className="relative w-12 h-12">
               <Image
                 src="/croc_mascot(y).png"
                 alt="Croc"
                 fill
-                sizes="32px"
+                sizes="48px"
                 className="object-contain"
               />
             </div>
@@ -120,9 +120,7 @@ export default function LandingPage() {
 
           <RoleSwitcher />
 
-          {/* <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 hover:bg-muted rounded-full">
-            <Menu className="h-6 w-6" />
-          </button> */}
+          <div className="w-8" /> {/* Spacer to match Bookings page layout */}
         </div>
       </header>
 

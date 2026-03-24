@@ -223,8 +223,8 @@ function CreateRideContent() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link href="/">
-              <div className="relative w-10 h-10">
-                <Image src="/croc_mascot(y).png" alt="Croc" fill sizes="40px" className="object-contain" />
+              <div className="relative w-12 h-12">
+                <Image src="/croc_mascot(y).png" alt="Croc" fill sizes="48px" className="object-contain" />
               </div>
             </Link>
             <Link href="/">

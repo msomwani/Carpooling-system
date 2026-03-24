@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Car, User } from "lucide-react"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api"
 
 export function RoleSwitcher() {
   const { user, getAuthHeaders } = useAuth()
@@ -20,11 +20,16 @@ export function RoleSwitcher() {
 
     // Persist to backend
     try {
-      await fetch(`${API_URL}/users/me/role`, {
+      const res = await fetch(`${API_URL}/users/me/role`, {
         method: "PATCH",
         headers: getAuthHeaders(),
         body: JSON.stringify({ role: newRole }),
       })
+      if (!res.ok) {
+        throw new Error(`Failed to update role: ${res.statusText}`)
+      }
+      // If we are logged in, we should ideally refresh the user object 
+      // but for now, the RoleContext handles the UI side via storage events
     } catch (e) {
       console.error("Failed to update role in backend:", e)
     }
@@ -35,9 +40,8 @@ export function RoleSwitcher() {
       <Button
         variant={role === "passenger" ? "default" : "ghost"}
         size="sm"
-        className={`rounded-full px-4 py-1 text-xs h-8 ${
-          role === "passenger" ? "shadow-sm" : "text-muted-foreground"
-        }`}
+        className={`rounded-full px-4 py-1 text-xs h-8 ${role === "passenger" ? "shadow-sm" : "text-muted-foreground"
+          }`}
         onClick={() => switchRole("passenger")}
       >
         <User className="w-3 h-3 mr-1" />
@@ -46,9 +50,8 @@ export function RoleSwitcher() {
       <Button
         variant={role === "driver" ? "default" : "ghost"}
         size="sm"
-        className={`rounded-full px-4 py-1 text-xs h-8 ${
-          role === "driver" ? "shadow-sm" : "text-muted-foreground"
-        }`}
+        className={`rounded-full px-4 py-1 text-xs h-8 ${role === "driver" ? "shadow-sm" : "text-muted-foreground"
+          }`}
         onClick={() => switchRole("driver")}
       >
         <Car className="w-3 h-3 mr-1" />

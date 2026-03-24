@@ -137,13 +137,15 @@ export default function BookingsPage() {
       <header className="sticky top-0 bg-background/80 backdrop-blur-md z-40 border-b">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <Image
-              src="/croc_mascot(y).png"
-              alt="Croc"
-              width={32}
-              height={32}
-              sizes="32px"
-            />
+            <div className="relative w-12 h-12">
+              <Image
+                src="/croc_mascot(y).png"
+                alt="Croc"
+                fill
+                sizes="48px"
+                className="object-contain"
+              />
+            </div>
             <span className="font-bold text-lg hidden sm:inline">Croc Ride</span>
           </Link>
           <RoleSwitcher />
