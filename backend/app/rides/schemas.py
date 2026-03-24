@@ -47,3 +47,12 @@ class RideResponse(BaseModel):
     price_per_seat: int
     status: Literal["ACTIVE", "COMPLETED", "CANCELLED"] = "ACTIVE"
     vehicle_id: UUID | None = None
+
+
+class RideDetailResponse(BaseModel):
+    ride: RideResponse
+    driver_name: str
+    vehicle_make: str | None = None
+    vehicle_model: str | None = None
+    vehicle_color: str | None = None
+    vehicle_license_plate: str | None = None

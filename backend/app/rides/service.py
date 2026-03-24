@@ -141,6 +141,32 @@ class RideService:
         return ride
 
     @staticmethod
+    def get_ride_by_id(db: Session, ride_id: str):
+        """Fetch a specific ride by ID, including driver and vehicle details."""
+        from app.vehicles.models import Vehicle
+        
+        ride = db.query(Ride).filter(Ride.id == ride_id).first()
+        if not ride:
+            return None
+        
+        # Get driver info
+        driver = db.query(User).filter(User.id == ride.driver_id).first()
+        
+        # Get vehicle info
+        vehicle = None
+        if ride.vehicle_id:
+            vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first()
+            
+        return {
+            "ride": ride,
+            "driver_name": driver.name if driver else "Unknown",
+            "vehicle_make": vehicle.make if vehicle else None,
+            "vehicle_model": vehicle.model if vehicle else None,
+            "vehicle_color": vehicle.color if vehicle else None,
+            "vehicle_license_plate": vehicle.license_plate if vehicle else None,
+        }
+
+    @staticmethod
     def get_driver_rides(db: Session, driver_id: str):
         """Fetch all rides created by the given driver, ordered by descending departure time."""
         return (

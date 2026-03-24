@@ -112,7 +112,7 @@ function CreateRideContent() {
 
   const handleSetSource = async (lat: number, lng: number, name?: string) => {
     let displayName = name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
-    
+
     setFormData(prev => ({
       ...prev,
       source: displayName,
@@ -224,7 +224,7 @@ function CreateRideContent() {
           <div className="flex items-center gap-3">
             <Link href="/">
               <div className="relative w-10 h-10">
-                <Image src="/croc_mascot.png" alt="Croc" fill sizes="40px" className="object-contain" />
+                <Image src="/croc_mascot(y).png" alt="Croc" fill sizes="40px" className="object-contain" />
               </div>
             </Link>
             <Link href="/">
@@ -245,7 +245,7 @@ function CreateRideContent() {
               <form onSubmit={handleSubmit} className="grid gap-4">
                 {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
-                <div 
+                <div
                   className={`grid gap-2 p-3 rounded-2xl transition-all border-2 ${selectionMode === "source" ? "border-primary bg-primary/5 shadow-md" : "border-transparent hover:bg-muted/50"}`}
                   onClick={() => setSelectionMode("source")}
                 >
@@ -254,12 +254,12 @@ function CreateRideContent() {
                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Pickup Point</span>
                   </Label>
                   <div className="relative">
-                    <Input 
+                    <Input
                       className="h-12 rounded-xl border-none bg-background shadow-inner px-4 text-sm font-bold focus-visible:ring-0 placeholder:text-muted-foreground/40 placeholder:font-medium"
                       required
                       placeholder="Tap map or search stop..."
                       value={formData.source}
-                      onChange={(e) => setFormData({...formData, source: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, source: e.target.value })}
                       onFocus={() => setSelectionMode("source")}
                     />
                     {selectionMode === "source" && !formData.source.includes(",") && (
@@ -280,7 +280,7 @@ function CreateRideContent() {
                   </div>
                 </div>
 
-                <div 
+                <div
                   className={`grid gap-2 p-3 rounded-2xl transition-all border-2 ${selectionMode === "destination" ? "border-destructive bg-destructive/5 shadow-md" : "border-transparent hover:bg-muted/50"}`}
                   onClick={() => setSelectionMode("destination")}
                 >
@@ -289,12 +289,12 @@ function CreateRideContent() {
                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Drop-off Point</span>
                   </Label>
                   <div className="relative">
-                    <Input 
+                    <Input
                       className="h-12 rounded-xl border-none bg-background shadow-inner px-4 text-sm font-bold focus-visible:ring-0 placeholder:text-muted-foreground/40 placeholder:font-medium"
                       required
                       placeholder="Tap map or search stop..."
                       value={formData.destination}
-                      onChange={(e) => setFormData({...formData, destination: e.target.value})}
+                      onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
                       onFocus={() => setSelectionMode("destination")}
                     />
                     {selectionMode === "destination" && !formData.destination.includes(",") && (
@@ -324,26 +324,26 @@ function CreateRideContent() {
                   />
                 </div>
 
-                  <div className="grid gap-2">
-                    <Label>Seats Available</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="8"
-                      defaultValue="4"
-                      onChange={(e) => setFormData({ ...formData, total_seats: parseInt(e.target.value) })}
-                    />
-                  </div>
+                <div className="grid gap-2">
+                  <Label>Seats Available</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="8"
+                    defaultValue="4"
+                    onChange={(e) => setFormData({ ...formData, total_seats: parseInt(e.target.value) })}
+                  />
+                </div>
 
-                  <div className="grid gap-2">
-                    <Label>Price per Seat (₹)</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      value={formData.price_per_seat}
-                      onChange={(e) => setFormData({ ...formData, price_per_seat: parseInt(e.target.value) })}
-                    />
-                  </div>
+                <div className="grid gap-2">
+                  <Label>Price per Seat (₹)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.price_per_seat}
+                    onChange={(e) => setFormData({ ...formData, price_per_seat: parseInt(e.target.value) })}
+                  />
+                </div>
 
                 <div className="grid gap-2">
                   <Label className="flex items-center gap-2">
@@ -397,29 +397,27 @@ function CreateRideContent() {
             </CardHeader>
             <CardContent className="flex-1 p-0 relative min-h-[400px]">
               <div ref={mapRef} className="absolute inset-0 z-10" />
-              
+
               {/* Map Selection Toggle Overlay */}
               <div className="absolute top-4 left-4 right-4 z-20 flex justify-center">
                 <div className="bg-background/90 backdrop-blur-md p-1.5 rounded-2xl border shadow-xl flex gap-1">
                   <button
                     type="button"
                     onClick={() => setSelectionMode("source")}
-                    className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      selectionMode === "source" 
-                        ? "bg-primary text-white shadow-lg shadow-primary/20" 
-                        : "text-muted-foreground hover:bg-muted"
-                    }`}
+                    className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectionMode === "source"
+                      ? "bg-primary text-white shadow-lg shadow-primary/20"
+                      : "text-muted-foreground hover:bg-muted"
+                      }`}
                   >
                     Set Pickup
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectionMode("destination")}
-                    className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      selectionMode === "destination" 
-                        ? "bg-destructive text-white shadow-lg shadow-destructive/20" 
-                        : "text-muted-foreground hover:bg-muted"
-                    }`}
+                    className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectionMode === "destination"
+                      ? "bg-destructive text-white shadow-lg shadow-destructive/20"
+                      : "text-muted-foreground hover:bg-muted"
+                      }`}
                   >
                     Set Drop-off
                   </button>

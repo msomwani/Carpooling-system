@@ -115,42 +115,75 @@ import "leaflet/dist/leaflet.css" // Required for the map to render correctly
 interface OpenMapProps {
   center?: { lat: number; lng: number }
   zoom?: number
+  pickup?: { lat: number; lng: number }
+  dropoff?: { lat: number; lng: number }
 }
 
-// I kept your default coordinates which map to the Vadodara/Godhra region!
-export function OpenMap({ center = { lat: 22.3072, lng: 73.1812 }, zoom = 12 }: OpenMapProps) {
+export function OpenMap({ 
+  center = { lat: 22.3072, lng: 73.1812 }, 
+  zoom = 12,
+  pickup,
+  dropoff
+}: OpenMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Ensure this only runs on the client and the map container exists
     if (typeof window !== "undefined" && mapRef.current && !mapInstanceRef.current) {
-
-      // 1. Initialize the Leaflet map
       const map = L.map(mapRef.current, {
-        zoomControl: false, // You can enable this if you want +/- buttons
+        zoomControl: false,
       }).setView([center.lat, center.lng], zoom)
 
-      // 2. Add the free OpenStreetMap tiles
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
       }).addTo(map)
 
-      // Store the instance and remove loading state
+      // Add markers if provided
+      const markers: L.Marker[] = []
+      
+      if (pickup) {
+        const pickupIcon = L.divIcon({
+          className: 'custom-div-icon',
+          html: '<div style="background-color: #15803d; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+        const pickupMarker = L.marker([pickup.lat, pickup.lng], { icon: pickupIcon }).addTo(map)
+        pickupMarker.bindPopup("<b>Pickup</b>").openPopup()
+        markers.push(pickupMarker)
+      }
+
+      if (dropoff) {
+        const dropoffIcon = L.divIcon({
+          className: 'custom-div-icon',
+          html: '<div style="background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>',
+          iconSize: [12, 12],
+          iconAnchor: [6, 6]
+        });
+        const dropoffMarker = L.marker([dropoff.lat, dropoff.lng], { icon: dropoffIcon }).addTo(map)
+        dropoffMarker.bindPopup("<b>Destination</b>")
+        markers.push(dropoffMarker)
+      }
+
+      // If we have both markers, fit bounds
+      if (markers.length === 2) {
+        const group = L.featureGroup(markers)
+        map.fitBounds(group.getBounds().pad(0.2))
+      }
+
       mapInstanceRef.current = map
       setIsLoading(false)
     }
 
-    // 3. Cleanup function for Next.js strict mode / unmounting
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove()
         mapInstanceRef.current = null
       }
     }
-  }, [center.lat, center.lng, zoom])
+  }, [center.lat, center.lng, zoom, pickup, dropoff])
 
   return (
     <div className="relative w-full h-full min-h-[300px] bg-muted rounded-2xl overflow-hidden shadow-inner">

@@ -29,11 +29,8 @@ export default function RidesPage() {
   const [searchSource, setSearchSource] = useState("")
   const [searchDest, setSearchDest] = useState("")
   const [debugError, setDebugError] = useState<string | null>(null)
-  
+
   const { user, getAuthHeaders } = useAuth()
-  const [bookingRide, setBookingRide] = useState<string | null>(null)
-  const [bookingSeats, setBookingSeats] = useState(1)
-  const [bookingError, setBookingError] = useState<string | null>(null)
 
   const searchRides = async () => {
     setIsLoading(true)
@@ -80,41 +77,8 @@ export default function RidesPage() {
     searchRides()
   }, [])
 
-  const handleBookClick = (rideId: string) => {
-    if (!user) {
-      router.push('/login')
-      return
-    }
-    setBookingRide(rideId)
-    setBookingSeats(1)
-    setBookingError(null)
-  }
-
-  const confirmBooking = async (rideId: string) => {
-    setBookingError(null)
-    try {
-      const response = await fetch("/api/bookings", {
-        method: "POST",
-        headers: {
-          ...getAuthHeaders(),
-          "Idempotency-Key": `${rideId}-${Date.now()}`
-        },
-        body: JSON.stringify({
-          ride_id: rideId,
-          seats: bookingSeats
-        })
-      })
-
-      if (response.ok) {
-        setBookingRide(null)
-        router.push("/bookings")
-      } else {
-        const data = await response.json()
-        setBookingError(data.detail || "Booking failed")
-      }
-    } catch (error) {
-      setBookingError("Failed to book. Please try again.")
-    }
+  const handleRideClick = (rideId: string) => {
+    router.push(`/rides/${rideId}`)
   }
 
   return (
@@ -126,9 +90,10 @@ export default function RidesPage() {
             <Link href="/">
               <div className="relative w-8 h-8">
                 <Image
-                  src="/croc_mascot.png"
+                  src="/croc_mascot(y).png"
                   alt="Croc"
                   fill
+                  sizes="32px"
                   className="object-contain"
                 />
               </div>
@@ -238,27 +203,12 @@ export default function RidesPage() {
                         </div>
                       </div>
                     </div>
-                    {bookingRide === ride.id ? (
-                      <div className="flex flex-col gap-2 items-end">
-                        <div className="flex items-center gap-2">
-                          <Input 
-                            type="number" 
-                            min={1} 
-                            max={ride.available_seats}
-                            value={bookingSeats}
-                            onChange={(e) => setBookingSeats(Number(e.target.value))}
-                            className="w-16 h-10 rounded-xl text-center font-bold"
-                          />
-                          <Button className="rounded-xl font-bold bg-green-600 hover:bg-green-700" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
-                          <Button variant="ghost" className="rounded-xl" onClick={() => setBookingRide(null)}>X</Button>
-                        </div>
-                        {bookingError && <span className="text-xs text-destructive">{bookingError}</span>}
-                      </div>
-                    ) : (
-                      <Button className="rounded-xl font-bold px-6" onClick={() => handleBookClick(ride.id)} disabled={ride.available_seats < 1}>
-                        {user ? "Book Ride" : "Login to Book"}
-                      </Button>
-                    )}
+                    <Button
+                      className="rounded-xl font-bold px-6"
+                      onClick={() => handleRideClick(ride.id)}
+                    >
+                      View Details
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

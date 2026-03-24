@@ -28,10 +28,10 @@ export default function AnalyticsPage() {
   const fetchAnalytics = async () => {
     setIsLoading(true)
     setError(null)
-    
+
     try {
       const response = await fetch(`/api/analytics/overview?days=${days}`)
-      
+
       if (response.ok) {
         const data = await response.json()
         setAnalytics(data)
@@ -57,10 +57,11 @@ export default function AnalyticsPage() {
           <div className="flex items-center gap-3">
             <Link href="/">
               <div className="relative w-10 h-10">
-                <Image 
-                  src="/croc_mascot.png" 
-                  alt="Croc Ride Mascot" 
+                <Image
+                  src="/croc_mascot(y).png"
+                  alt="Croc Ride Mascot"
                   fill
+                  sizes="40px"
                   className="object-contain"
                 />
               </div>
@@ -87,8 +88,8 @@ export default function AnalyticsPage() {
             <p className="text-muted-foreground">Platform performance overview</p>
           </div>
           <div className="flex items-center gap-3">
-            <select 
-              value={days} 
+            <select
+              value={days}
               onChange={(e) => setDays(Number(e.target.value))}
               className="border rounded-lg px-3 py-2 text-sm"
             >

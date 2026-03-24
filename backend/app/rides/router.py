@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.common.db import get_db
-from app.rides.schemas import RideCreateRequest, RideResponse
+from app.rides.schemas import RideCreateRequest, RideResponse, RideDetailResponse
 from app.rides.service import RideService
 from app.rides.models import RideStatus
 from app.auth.dependencies import get_current_user_id
@@ -34,6 +34,8 @@ def create_ride(
         return ride
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
+
 
 
 @router.post("/{ride_id}/complete", response_model=RideResponse)
@@ -104,3 +106,15 @@ def get_my_rides(
 ):
     """Fetch all rides created by the authenticated driver."""
     return [RideResponse.model_validate(r) for r in RideService.get_driver_rides(db, driver_id=user_id)]
+
+
+@router.get("/{ride_id}", response_model=RideDetailResponse)
+def get_ride(
+    ride_id: str,
+    db: Session = Depends(get_db),
+):
+    """Fetch details for a specific ride by ID."""
+    ride_details = RideService.get_ride_by_id(db, ride_id=ride_id)
+    if not ride_details:
+        raise HTTPException(status_code=404, detail="Ride not found")
+    return ride_details

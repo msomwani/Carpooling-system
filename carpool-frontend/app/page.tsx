@@ -51,9 +51,6 @@ export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const { user, getAuthHeaders } = useAuth()
-  const [bookingRide, setBookingRide] = useState<string | null>(null)
-  const [bookingSeats, setBookingSeats] = useState(1)
-  const [bookingError, setBookingError] = useState<string | null>(null)
 
   // Only run client-side logic after mount to prevent hydration errors
   useEffect(() => {
@@ -97,41 +94,8 @@ export default function LandingPage() {
     ride.destination.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const handleBookClick = (rideId: string) => {
-    if (!user) {
-      router.push('/login')
-      return
-    }
-    setBookingRide(rideId)
-    setBookingSeats(1)
-    setBookingError(null)
-  }
-
-  const confirmBooking = async (rideId: string) => {
-    setBookingError(null)
-    try {
-      const response = await fetch("/api/bookings", {
-        method: "POST",
-        headers: {
-          ...getAuthHeaders(),
-          "Idempotency-Key": `${rideId}-${Date.now()}`
-        },
-        body: JSON.stringify({
-          ride_id: rideId,
-          seats: bookingSeats
-        })
-      })
-
-      if (response.ok) {
-        setBookingRide(null)
-        router.push("/bookings")
-      } else {
-        const data = await response.json()
-        setBookingError(data.detail || "Booking failed")
-      }
-    } catch (error) {
-      setBookingError("Failed to book. Please try again.")
-    }
+  const handleRideClick = (rideId: string) => {
+    router.push(`/rides/${rideId}`)
   }
 
   if (!isMounted) return null
@@ -143,7 +107,13 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative w-8 h-8">
-              <Image src="/croc_mascot.png" alt="Croc" fill className="object-contain" />
+              <Image
+                src="/croc_mascot(y).png"
+                alt="Croc"
+                fill
+                sizes="32px"
+                className="object-contain"
+              />
             </div>
             <span className="font-bold text-lg hidden sm:inline">Croc Ride</span>
           </div>
@@ -278,31 +248,13 @@ export default function LandingPage() {
                                 })}
                               </span>
                             </div>
-                            {bookingRide === ride.id ? (
-                                <div className="flex flex-col gap-2 items-end">
-                                  <div className="flex items-center gap-2">
-                                    <div className="flex flex-col items-end mr-2">
-                                      <span className="text-[10px] uppercase font-bold text-muted-foreground">Total</span>
-                                      <span className="text-sm font-black text-primary">₹{bookingSeats * (ride.price_per_seat || 0)}</span>
-                                    </div>
-                                    <Input 
-                                      type="number" 
-                                      min={1} 
-                                      max={ride.available_seats}
-                                      value={bookingSeats}
-                                      onChange={(e) => setBookingSeats(Number(e.target.value))}
-                                      className="w-14 h-8 rounded-xl text-center font-bold px-1"
-                                    />
-                                    <Button size="sm" className="rounded-xl px-4 font-bold bg-green-600 hover:bg-green-700" onClick={() => confirmBooking(ride.id)}>Confirm</Button>
-                                    <Button size="sm" variant="ghost" className="rounded-xl px-2" onClick={() => setBookingRide(null)}>X</Button>
-                                  </div>
-                                  {bookingError && <span className="text-xs text-destructive max-w-[200px] text-right leading-tight">{bookingError}</span>}
-                                </div>
-                            ) : (
-                              <Button size="sm" className="rounded-xl px-6 font-bold" onClick={() => handleBookClick(ride.id)} disabled={ride.available_seats < 1}>
-                                Book Base
-                              </Button>
-                            )}
+                            <Button
+                              size="sm"
+                              className="rounded-xl px-6 font-bold"
+                              onClick={() => handleRideClick(ride.id)}
+                            >
+                              View Details
+                            </Button>
                           </div>
                         </div>
                       </CardContent>

@@ -177,7 +177,13 @@ export default function AccountPage() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <div className="relative w-7 h-7">
-              <Image src="/croc_mascot.png" alt="Croc" fill className="object-contain" />
+              <Image
+                src="/croc_mascot(y).png"
+                alt="Croc"
+                fill
+                sizes="28px"
+                className="object-contain"
+              />
             </div>
             <h1 className="text-lg font-bold">Croc Ride</h1>
           </div>
@@ -238,8 +244,10 @@ export default function AccountPage() {
               {/* Profile Header */}
               <div className="flex items-center gap-4 pb-2">
                 <div className="relative">
-                  <div className="w-16 h-16 rounded-2xl bg-muted/30 flex items-center justify-center text-primary border shadow-inner">
-                    <User className="h-8 w-8 opacity-40" />
+                  <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-primary">
+                    <div className="relative w-12 h-12">
+                      <Image src="/croc_mascot(y).png" alt="Croc" fill sizes="48px" className="object-contain" />
+                    </div>
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-background p-1 rounded-full shadow-lg border">
                     <ShieldCheck className="h-3 w-3 text-green-500" />
@@ -301,20 +309,20 @@ export default function AccountPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Make</Label>
-                    <Input 
-                      placeholder="e.g. Maruti" 
-                      value={newVehicle.make} 
-                      onChange={(e) => setNewVehicle({...newVehicle, make: e.target.value})}
+                    <Input
+                      placeholder="e.g. Maruti"
+                      value={newVehicle.make}
+                      onChange={(e) => setNewVehicle({ ...newVehicle, make: e.target.value })}
                       className="rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none"
                       required
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Model</Label>
-                    <Input 
-                      placeholder="e.g. Swift" 
-                      value={newVehicle.model} 
-                      onChange={(e) => setNewVehicle({...newVehicle, model: e.target.value})}
+                    <Input
+                      placeholder="e.g. Swift"
+                      value={newVehicle.model}
+                      onChange={(e) => setNewVehicle({ ...newVehicle, model: e.target.value })}
                       className="rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none"
                       required
                     />
@@ -323,21 +331,21 @@ export default function AccountPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Color</Label>
-                    <Input 
-                      placeholder="e.g. White" 
-                      value={newVehicle.color} 
-                      onChange={(e) => setNewVehicle({...newVehicle, color: e.target.value})}
+                    <Input
+                      placeholder="e.g. White"
+                      value={newVehicle.color}
+                      onChange={(e) => setNewVehicle({ ...newVehicle, color: e.target.value })}
                       className="rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none"
                       required
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Number Plate</Label>
-                    <Input 
-                      placeholder="GJ-06..." 
-                      value={newVehicle.license_plate} 
+                    <Input
+                      placeholder="GJ-06..."
+                      value={newVehicle.license_plate}
                       onChange={(e) => {
-                        setNewVehicle({...newVehicle, license_plate: e.target.value})
+                        setNewVehicle({ ...newVehicle, license_plate: e.target.value })
                         setVehicleError(validateLicensePlate(e.target.value))
                       }}
                       className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none uppercase ${vehicleError ? "border-destructive focus-visible:ring-destructive" : ""}`}
@@ -353,12 +361,11 @@ export default function AccountPage() {
                       <button
                         key={type}
                         type="button"
-                        onClick={() => setNewVehicle({...newVehicle, type})}
-                        className={`flex-1 h-10 rounded-xl text-xs font-bold transition-all border-2 ${
-                          newVehicle.type === type 
-                            ? "border-primary bg-primary/5 text-primary" 
-                            : "border-muted/30 text-muted-foreground hover:border-muted"
-                        }`}
+                        onClick={() => setNewVehicle({ ...newVehicle, type })}
+                        className={`flex-1 h-10 rounded-xl text-xs font-bold transition-all border-2 ${newVehicle.type === type
+                          ? "border-primary bg-primary/5 text-primary"
+                          : "border-muted/30 text-muted-foreground hover:border-muted"
+                          }`}
                       >
                         {type}
                       </button>
@@ -403,10 +410,10 @@ export default function AccountPage() {
                         <span className="uppercase tracking-widest">{v.license_plate}</span>
                       </div>
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-9 w-9 rounded-xl text-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-colors group-hover:text-destructive" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 rounded-xl text-destructive/40 hover:bg-destructive/5 hover:text-destructive transition-colors group-hover:text-destructive"
                       onClick={() => handleDeleteVehicle(v.id)}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -438,7 +445,7 @@ export default function AccountPage() {
         {/* Version Info */}
         <div className="text-center opacity-40 pb-4">
           <div className="flex items-center justify-center gap-2 grayscale mb-1">
-            <Image src="/croc_mascot.png" alt="Croc" width={14} height={14} />
+            <Image src="/croc_mascot(y).png" alt="Croc" width={14} height={14} />
             <p className="text-[9px] font-black uppercase tracking-[0.2em]">Croc Ride v1.2.4</p>
           </div>
           <p className="text-[7px] font-bold uppercase tracking-widest">© 2024 Croc Ride Inc.</p>

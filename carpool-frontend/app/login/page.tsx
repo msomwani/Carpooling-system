@@ -123,7 +123,7 @@ export default function LoginPage() {
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center mb-2">
             <div className="relative w-12 h-12">
-              <Image src="/croc_mascot.png" alt="Croc Ride Mascot" fill className="object-contain" />
+              <Image src="/croc_mascot(y).png" alt="Croc Ride Mascot" fill sizes="48px" className="object-contain" />
             </div>
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight">Croc Ride</CardTitle>
