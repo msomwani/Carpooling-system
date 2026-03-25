@@ -8,13 +8,29 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Search, MapPin, Clock, Menu, X, Plus } from "lucide-react"
+import { Loader2, Search, MapPin, Clock, Menu, X, Plus, RefreshCw } from "lucide-react"
 import { useRole } from "@/lib/RoleContext"
 import { useAuth } from "@/lib/AuthContext"
 import { RoleSwitcher } from "@/components/RoleSwitcher"
 // import { OpenMap } from "@/components/GoogleMap"
 import dynamic from "next/dynamic"
 // import { Loader2 } from "lucide-react"
+
+type DriverRide = {
+  id: string
+  source: string
+  destination: string
+  departure_time: string
+  available_seats: number
+  price_per_seat: number
+  total_seats: number
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED"
+  source_lat: number
+  source_lng: number
+  destination_lat: number
+  destination_lng: number
+  vehicle_id: string | null
+}
 
 // Dynamically import the map and disable Server-Side Rendering (SSR)
 const OpenMap = dynamic(
@@ -50,6 +66,7 @@ export default function LandingPage() {
   const [searched, setSearched] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
+  const [lastRide, setLastRide] = useState<DriverRide | null>(null)
   const { user, getAuthHeaders } = useAuth()
 
   // Only run client-side logic after mount to prevent hydration errors
@@ -87,7 +104,24 @@ export default function LandingPage() {
 
   useEffect(() => {
     fetchRides()
-  }, [])
+    if (role === "driver") {
+       fetchLastDriverRide()
+    }
+  }, [role])
+
+  const fetchLastDriverRide = async () => {
+    try {
+      const response = await fetch("/api/rides/me", { headers: getAuthHeaders() })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.length > 0) {
+           setLastRide(data[0]) // Assumes most recent is first
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch last ride")
+    }
+  }
 
   const filteredRides = rides.filter((ride) =>
     ride.source.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -262,17 +296,53 @@ export default function LandingPage() {
               )}
             </div>
           ) : (
-            <div className="bg-card rounded-3xl p-8 border shadow-sm text-center">
-              <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto mb-6 text-primary rotate-3">
-                <Plus className="w-10 h-10" />
+            <div className="space-y-6">
+              {lastRide && (
+                <div className="animate-in slide-in-from-top-4 duration-500">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-3 ml-1">Quick Repeat</h3>
+                  <Card className="rounded-[2rem] border-none shadow-xl bg-primary/5 border border-primary/10 overflow-hidden">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                           <div className="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
+                             <RefreshCw className="h-4 w-4" />
+                           </div>
+                           <span className="font-bold text-sm">Last Trip Details</span>
+                        </div>
+                        <Badge className="bg-primary/20 text-primary border-none text-[10px] font-black uppercase tracking-tighter">Recommended</Badge>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 mb-6">
+                         <div className="flex-1">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Route</p>
+                            <p className="text-sm font-bold truncate">{lastRide.source} → {lastRide.destination}</p>
+                         </div>
+                      </div>
+
+                      <Link 
+                        href={`/rides/create?source=${encodeURIComponent(lastRide.source)}&destination=${encodeURIComponent(lastRide.destination)}&source_lat=${lastRide.source_lat}&source_lng=${lastRide.source_lng}&destination_lat=${lastRide.destination_lat}&destination_lng=${lastRide.destination_lng}&seats=${lastRide.total_seats}&price=${lastRide.price_per_seat}&vehicle_id=${lastRide.vehicle_id || ""}`}
+                      >
+                        <Button className="w-full h-12 rounded-2xl font-black text-sm uppercase tracking-widest bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
+                          Repeat This Ride
+                        </Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              <div className="bg-card rounded-3xl p-8 border shadow-sm text-center">
+                <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto mb-6 text-primary rotate-3">
+                  <Plus className="w-10 h-10" />
+                </div>
+                <h2 className="text-2xl font-bold mb-3">Ready to Drive?</h2>
+                <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
+                  Help fellow commuters and save fuel costs. Create a ride on your regular route.
+                </p>
+                <Button size="lg" className="w-full sm:w-auto px-10 rounded-2xl text-lg h-14 font-bold shadow-xl shadow-primary/20" onClick={() => router.push('/rides/create')}>
+                  Create Ride Now
+                </Button>
               </div>
-              <h2 className="text-2xl font-bold mb-3">Ready to Drive?</h2>
-              <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
-                Help fellow commuters and save fuel costs. Create a ride on your regular route.
-              </p>
-              <Button size="lg" className="w-full sm:w-auto px-10 rounded-2xl text-lg h-14 font-bold shadow-xl shadow-primary/20" onClick={() => router.push('/rides/create')}>
-                Create Ride Now
-              </Button>
             </div>
           )}
         </div>

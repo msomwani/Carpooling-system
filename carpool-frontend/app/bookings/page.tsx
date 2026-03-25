@@ -6,7 +6,7 @@ import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Calendar, MapPin, X, History, User, Car, Clock, ChevronRight } from "lucide-react"
+import { Loader2, Calendar, MapPin, X, History, User, Car, Clock, ChevronRight, RefreshCw } from "lucide-react"
 import { useRole } from "@/lib/RoleContext"
 import { useAuth } from "@/lib/AuthContext"
 import { RoleSwitcher } from "@/components/RoleSwitcher"
@@ -29,6 +29,11 @@ type DriverRide = {
   price_per_seat: number
   total_seats: number
   status: "ACTIVE" | "COMPLETED" | "CANCELLED"
+  source_lat: number
+  source_lng: number
+  destination_lat: number
+  destination_lng: number
+  vehicle_id: string | null
 }
 
 export default function BookingsPage() {
@@ -288,11 +293,21 @@ export default function BookingsPage() {
                           day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
                         })}
                       </div>
-                      <Link href={`/rides/${ride.id}`}>
-                        <Button size="sm" variant="ghost" className="text-primary font-bold group">
-                          Details <ChevronRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
-                        </Button>
-                      </Link>
+                      <div className="flex gap-2">
+                        <Link href={`/rides/${ride.id}`} className="flex-1">
+                          <Button size="sm" variant="ghost" className="w-full text-primary font-bold group">
+                            Details <ChevronRight className="w-4 h-4 ml-1 transition-transform group-hover:translate-x-1" />
+                          </Button>
+                        </Link>
+                        <Link 
+                          href={`/rides/create?source=${encodeURIComponent(ride.source)}&destination=${encodeURIComponent(ride.destination)}&source_lat=${ride.source_lat}&source_lng=${ride.source_lng}&destination_lat=${ride.destination_lat}&destination_lng=${ride.destination_lng}&seats=${ride.total_seats}&price=${ride.price_per_seat}&vehicle_id=${ride.vehicle_id || ""}`}
+                          className="flex-1"
+                        >
+                          <Button size="sm" variant="outline" className="w-full rounded-xl font-bold border-primary/20 text-primary hover:bg-primary/5">
+                            <RefreshCw className="w-3 h-3 mr-1" /> Repeat
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
