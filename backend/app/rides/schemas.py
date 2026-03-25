@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 class RideCreateRequest(BaseModel):
@@ -18,6 +18,7 @@ class RideCreateRequest(BaseModel):
     total_seats: int = Field(gt=0)
     price_per_seat: int = Field(ge=0)
     vehicle_id: UUID
+    route_geometry: str | None = None  # WKT or GeoJSON string
 
     @model_validator(mode="after")
     def validate_coordinate_pairs(self):
@@ -47,6 +48,14 @@ class RideResponse(BaseModel):
     price_per_seat: int
     status: Literal["ACTIVE", "COMPLETED", "CANCELLED"] = "ACTIVE"
     vehicle_id: UUID | None = None
+    route_geometry: str | None = None
+
+    @field_validator("route_geometry", mode="before")
+    @classmethod
+    def convert_geometry(cls, v):
+        if v is None or isinstance(v, str):
+            return v
+        return None # Avoid validation error for WKBElement if shapely is missing
 
 
 class RideDetailResponse(BaseModel):

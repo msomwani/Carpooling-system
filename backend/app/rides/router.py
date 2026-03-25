@@ -29,7 +29,12 @@ def create_ride(
             price_per_seat=payload.price_per_seat,
             vehicle_id=payload.vehicle_id,
             source=payload.source,
-            destination=payload.destination
+            source_lat=payload.source_lat,
+            source_lng=payload.source_lng,
+            destination=payload.destination,
+            destination_lat=payload.destination_lat,
+            destination_lng=payload.destination_lng,
+            route_geometry=payload.route_geometry
         )
         return ride
     except ValueError as e:

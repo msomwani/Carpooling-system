@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import Image from "next/image"
 import { CORRIDOR_STOPS } from "@/lib/locations"
@@ -12,7 +12,6 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, ArrowLeft, MapPin, Calendar, Users, Car } from "lucide-react"
 import { useAuth } from "@/lib/AuthContext"
-import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import dynamic from "next/dynamic"
 
@@ -33,19 +32,27 @@ const fetchAddress = async (lat: number, lng: number): Promise<string> => {
 
 function CreateRideContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { getAuthHeaders } = useAuth()
+  const LeafletRef = useRef<any>(null)
   const [apiKey, setApiKey] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [mapError, setMapError] = useState<string | null>(null)
   const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstanceRef = useRef<L.Map | null>(null)
-  const sourceMarkerRef = useRef<L.Marker | null>(null)
-  const destMarkerRef = useRef<L.Marker | null>(null)
+  const mapInstanceRef = useRef<any>(null)
+  const sourceMarkerRef = useRef<any>(null)
+  const destMarkerRef = useRef<any>(null)
+  const routeLayerRef = useRef<any>(null)
 
   const [vehicles, setVehicles] = useState<any[]>([])
   const [selectedVehicleId, setSelectedVehicleId] = useState("")
+  const [routeGeometry, setRouteGeometry] = useState<any>(null)
   const [selectionMode, setSelectionMode] = useState<"source" | "destination">("source")
+  const [showSourceDropdown, setShowSourceDropdown] = useState(false)
+  const [showDestDropdown, setShowDestDropdown] = useState(false)
+  const sourceContainerRef = useRef<HTMLDivElement>(null)
+  const destContainerRef = useRef<HTMLDivElement>(null)
   const selectionRef = useRef(selectionMode)
 
   useEffect(() => {
@@ -80,17 +87,77 @@ function CreateRideContent() {
     }
     fetchVehicles()
 
+    // Check for query params to pre-fill
+    const pSource = searchParams.get("source")
+    const pDest = searchParams.get("destination")
+    const pSLat = searchParams.get("source_lat")
+    const pSLng = searchParams.get("source_lng")
+    const pDLat = searchParams.get("destination_lat")
+    const pDLng = searchParams.get("destination_lng")
+    const pSeats = searchParams.get("seats")
+    const pPrice = searchParams.get("price")
+    const pVehicle = searchParams.get("vehicle_id")
+
+    if (pSource || pDest || pSLat || pDLat) {
+      setFormData(prev => ({
+        ...prev,
+        source: pSource || prev.source,
+        destination: pDest || prev.destination,
+        source_lat: pSLat ? parseFloat(pSLat) : prev.source_lat,
+        source_lng: pSLng ? parseFloat(pSLng) : prev.source_lng,
+        destination_lat: pDLat ? parseFloat(pDLat) : prev.destination_lat,
+        destination_lng: pDLng ? parseFloat(pDLng) : prev.destination_lng,
+        total_seats: pSeats ? parseInt(pSeats) : prev.total_seats,
+        price_per_seat: pPrice ? parseInt(pPrice) : prev.price_per_seat,
+      }))
+      if (pVehicle) setSelectedVehicleId(pVehicle)
+    }
+
     // Init Leaflet Map
     if (typeof window !== "undefined" && mapRef.current && !mapInstanceRef.current) {
+      const L = require("leaflet")
+      LeafletRef.current = L
+
+      const initialLat = pSLat ? parseFloat(pSLat) : 22.3072
+      const initialLng = pSLng ? parseFloat(pSLng) : 73.1812
+      
       const map = L.map(mapRef.current, {
         zoomControl: true,
-      }).setView([22.3072, 73.1812], 11)
+      }).setView([initialLat, initialLng], 11)
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map)
 
-      map.on("click", (e) => {
+      // Pre-add markers if coordinates exist
+      if (pSLat && pSLng) {
+        sourceMarkerRef.current = L.marker([parseFloat(pSLat), parseFloat(pSLng)], {
+          icon: L.divIcon({
+            className: 'custom-div-icon',
+            html: "<div style='background-color:#15803d; width:24px; height:24px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:10px;'>S</div>",
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        }).addTo(map)
+      }
+
+      if (pDLat && pDLng) {
+        destMarkerRef.current = L.marker([parseFloat(pDLat), parseFloat(pDLng)], {
+          icon: L.divIcon({
+            className: 'custom-div-icon',
+            html: "<div style='background-color:#dc2626; width:24px; height:24px; border-radius:50%; border:2px solid white; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; font-size:10px;'>D</div>",
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        }).addTo(map)
+        
+        // Fit bounds if both markers exist
+        if (pSLat && pSLng) {
+           map.fitBounds(L.latLngBounds([parseFloat(pSLat), parseFloat(pSLng)], [parseFloat(pDLat), parseFloat(pDLng)]), { padding: [50, 50] })
+        }
+      }
+
+      map.on("click", (e: any) => {
         const { lat, lng } = e.latlng
         if (selectionRef.current === "source") {
           handleSetSource(lat, lng)
@@ -102,13 +169,73 @@ function CreateRideContent() {
       mapInstanceRef.current = map
     }
 
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sourceContainerRef.current && !sourceContainerRef.current.contains(event.target as Node)) {
+        setShowSourceDropdown(false)
+      }
+      if (destContainerRef.current && !destContainerRef.current.contains(event.target as Node)) {
+        setShowDestDropdown(false)
+      }
+    }
+
+    if (typeof window !== "undefined") {
+       document.addEventListener("mousedown", handleClickOutside)
+    }
+
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove()
         mapInstanceRef.current = null
       }
+      if (typeof window !== "undefined") {
+        document.removeEventListener("mousedown", handleClickOutside)
+      }
     }
-  }, [])
+  }, []) // Initialize only once
+
+  // Separate effect for route fetching
+  useEffect(() => {
+    if (formData.source_lat && formData.destination_lat) {
+      fetchRoute(formData.source_lat, formData.source_lng, formData.destination_lat, formData.destination_lng)
+    }
+  }, [formData.source_lat, formData.source_lng, formData.destination_lat, formData.destination_lng])
+ 
+  const fetchRoute = async (sLat: number, sLng: number, dLat: number, dLng: number) => {
+    try {
+      const response = await fetch(
+        `https://router.project-osrm.org/route/v1/driving/${sLng},${sLat};${dLng},${dLat}?overview=full&geometries=geojson`
+      )
+      const data = await response.json()
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0].geometry
+        setRouteGeometry(route)
+        drawRoute(route)
+      }
+    } catch (err) {
+      console.error("Failed to fetch route", err)
+    }
+  }
+ 
+  const drawRoute = (geometry: any) => {
+    const L = LeafletRef.current
+    const map = mapInstanceRef.current
+    if (!L || !map || !geometry) return
+ 
+    if (routeLayerRef.current) {
+      map.removeLayer(routeLayerRef.current)
+    }
+ 
+    // OSRM GeoJSON gives [lng, lat], Leaflet needs [lat, lng]
+    const latLngs = geometry.coordinates.map((c: any) => [c[1], c[0]])
+    
+    routeLayerRef.current = L.polyline(latLngs, {
+      color: "#15803d", // primary green
+      weight: 5,
+      opacity: 0.7,
+      lineJoin: "round",
+      className: "animate-draw-route" // Custom CSS could be added for animation
+    }).addTo(map)
+  }
 
   const handleSetSource = async (lat: number, lng: number, name?: string) => {
     let displayName = name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
@@ -120,9 +247,15 @@ function CreateRideContent() {
       source_lng: lng
     }))
 
-    if (sourceMarkerRef.current) {
+    const L = LeafletRef.current
+    if (!L || !mapInstanceRef.current) return
+
+    if (sourceMarkerRef.current && sourceMarkerRef.current.getElement?.()) {
       sourceMarkerRef.current.setLatLng([lat, lng])
-    } else if (mapInstanceRef.current) {
+    } else {
+      if (sourceMarkerRef.current) {
+        try { sourceMarkerRef.current.remove() } catch (e) {}
+      }
       sourceMarkerRef.current = L.marker([lat, lng], {
         icon: L.divIcon({
           className: 'custom-div-icon',
@@ -149,9 +282,15 @@ function CreateRideContent() {
       destination_lng: lng
     }))
 
-    if (destMarkerRef.current) {
+    const L = LeafletRef.current
+    if (!L || !mapInstanceRef.current) return
+
+    if (destMarkerRef.current && destMarkerRef.current.getElement?.()) {
       destMarkerRef.current.setLatLng([lat, lng])
-    } else if (mapInstanceRef.current) {
+    } else {
+      if (destMarkerRef.current) {
+        try { destMarkerRef.current.remove() } catch (e) {}
+      }
       destMarkerRef.current = L.marker([lat, lng], {
         icon: L.divIcon({
           className: 'custom-div-icon',
@@ -174,8 +313,10 @@ function CreateRideContent() {
 
     if (isSource) {
       handleSetSource(stop.lat, stop.lng, stopName)
+      setShowSourceDropdown(false)
     } else {
       handleSetDest(stop.lat, stop.lng, stopName)
+      setShowDestDropdown(false)
     }
   }
 
@@ -195,6 +336,7 @@ function CreateRideContent() {
       total_seats: Number(formData.total_seats),
       price_per_seat: Number(formData.price_per_seat),
       vehicle_id: selectedVehicleId,
+      route_geometry: routeGeometry ? `LINESTRING(${routeGeometry.coordinates.map((c: any) => `${c[0]} ${c[1]}`).join(", ")})` : null
     }
 
     try {
@@ -246,8 +388,12 @@ function CreateRideContent() {
                 {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
 
                 <div
+                  ref={sourceContainerRef}
                   className={`grid gap-2 p-3 rounded-2xl transition-all border-2 ${selectionMode === "source" ? "border-primary bg-primary/5 shadow-md" : "border-transparent hover:bg-muted/50"}`}
-                  onClick={() => setSelectionMode("source")}
+                  onClick={() => {
+                    setSelectionMode("source")
+                    setShowSourceDropdown(true)
+                  }}
                 >
                   <Label className="flex items-center gap-2 cursor-pointer mb-1">
                     <div className={`w-2.5 h-2.5 rounded-full ${selectionMode === "source" ? "bg-primary animate-pulse shadow-[0_0_8px_rgba(21,128,61,0.5)]" : "bg-muted-foreground/30"}`} />
@@ -259,10 +405,16 @@ function CreateRideContent() {
                       required
                       placeholder="Tap map or search stop..."
                       value={formData.source}
-                      onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                      onFocus={() => setSelectionMode("source")}
+                      onChange={(e) => {
+                        setFormData({ ...formData, source: e.target.value })
+                        setShowSourceDropdown(true)
+                      }}
+                      onFocus={() => {
+                        setSelectionMode("source")
+                        setShowSourceDropdown(true)
+                      }}
                     />
-                    {selectionMode === "source" && !formData.source.includes(",") && (
+                    {showSourceDropdown && !formData.source.includes(",") && (
                       <div className="absolute left-0 right-0 top-full mt-2 z-50 max-h-48 overflow-y-auto bg-background rounded-2xl border shadow-2xl p-1.5 animate-in slide-in-from-top-2 duration-200">
                         {CORRIDOR_STOPS.filter(s => s.name.toLowerCase().includes(formData.source.toLowerCase()) || formData.source === "").map(stop => (
                           <button
@@ -281,8 +433,12 @@ function CreateRideContent() {
                 </div>
 
                 <div
+                  ref={destContainerRef}
                   className={`grid gap-2 p-3 rounded-2xl transition-all border-2 ${selectionMode === "destination" ? "border-destructive bg-destructive/5 shadow-md" : "border-transparent hover:bg-muted/50"}`}
-                  onClick={() => setSelectionMode("destination")}
+                  onClick={() => {
+                    setSelectionMode("destination")
+                    setShowDestDropdown(true)
+                  }}
                 >
                   <Label className="flex items-center gap-2 cursor-pointer mb-1">
                     <div className={`w-2.5 h-2.5 rounded-full ${selectionMode === "destination" ? "bg-destructive animate-pulse shadow-[0_0_8px_rgba(220,38,38,0.5)]" : "bg-muted-foreground/30"}`} />
@@ -294,10 +450,16 @@ function CreateRideContent() {
                       required
                       placeholder="Tap map or search stop..."
                       value={formData.destination}
-                      onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                      onFocus={() => setSelectionMode("destination")}
+                      onChange={(e) => {
+                        setFormData({ ...formData, destination: e.target.value })
+                        setShowDestDropdown(true)
+                      }}
+                      onFocus={() => {
+                        setSelectionMode("destination")
+                        setShowDestDropdown(true)
+                      }}
                     />
-                    {selectionMode === "destination" && !formData.destination.includes(",") && (
+                    {showDestDropdown && !formData.destination.includes(",") && (
                       <div className="absolute left-0 right-0 top-full mt-2 z-50 max-h-48 overflow-y-auto bg-background rounded-2xl border shadow-2xl p-1.5 animate-in slide-in-from-top-2 duration-200">
                         {CORRIDOR_STOPS.filter(s => s.name.toLowerCase().includes(formData.destination.toLowerCase()) || formData.destination === "").map(stop => (
                           <button

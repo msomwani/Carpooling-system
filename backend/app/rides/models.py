@@ -30,7 +30,7 @@ class Ride(Base):
     destination_lat = Column(Float, nullable=True)
     destination_lng = Column(Float, nullable=True)
     destination_location = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
-
+    route_geometry = Column(Geography(geometry_type='LINESTRING', srid=4326), nullable=True)
     departure_time = Column(DateTime(timezone=True), nullable=False)
 
     total_seats = Column(Integer, nullable=False)

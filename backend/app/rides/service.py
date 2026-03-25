@@ -75,6 +75,7 @@ class RideService:
         total_seats: int,
         price_per_seat: int = 0,
         vehicle_id: str | None = None,
+        route_geometry: str | None = None,
     ) -> Ride:
         from app.vehicles.models import Vehicle
         
@@ -114,6 +115,7 @@ class RideService:
             available_seats=total_seats,
             price_per_seat=price_per_seat,
             vehicle_id=vehicle_id,
+            route_geometry=route_geometry,
             status=RideStatus.ACTIVE,
         )
 
