@@ -61,6 +61,32 @@ class RideService:
             raise ValueError("You already have a confirmed booking for another ride within 2 hours of this time.")
 
     @staticmethod
+    def sync_ride_status(db: Session, ride: Ride) -> bool:
+        """
+        Check if an ACTIVE ride's departure time has passed and update to COMPLETED.
+        Returns True if status was changed, False otherwise.
+        """
+        if ride.status == RideStatus.ACTIVE and ride.departure_time:
+            now = datetime.now(timezone.utc)
+            dept = ride.departure_time
+            if dept.tzinfo is None:
+                dept = dept.replace(tzinfo=timezone.utc)
+            
+            if dept < now:
+                ride.status = RideStatus.COMPLETED
+                db.commit()
+                db.refresh(ride)
+                # Invalidate cache
+                try:
+                    cache_pattern = "rides:*"
+                    for key in redis_client.scan_iter(match=cache_pattern):
+                        redis_client.delete(key)
+                except Exception:
+                    pass
+                return True
+        return False
+
+    @staticmethod
     def create_ride(
         db: Session,
         *,
@@ -153,6 +179,9 @@ class RideService:
         if not ride:
             return None
         
+        # Sync status before returning
+        RideService.sync_ride_status(db, ride)
+        
         # Get driver info
         driver = db.query(User).filter(User.id == ride.driver_id).first()
         
@@ -173,12 +202,15 @@ class RideService:
     @staticmethod
     def get_driver_rides(db: Session, driver_id: str):
         """Fetch all rides created by the given driver, ordered by descending departure time."""
-        return (
+        rides = (
             db.query(Ride)
             .filter(Ride.driver_id == driver_id)
             .order_by(Ride.departure_time.desc().nulls_last())
             .all()
         )
+        for r in rides:
+            RideService.sync_ride_status(db, r)
+        return rides
 
     @staticmethod
     def complete_ride(db: Session, *, ride_id: str, driver_id: str) -> Ride:

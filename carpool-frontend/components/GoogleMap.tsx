@@ -130,7 +130,9 @@ export function OpenMap({
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    // Initialize map only once
     if (typeof window !== "undefined" && mapRef.current && !mapInstanceRef.current) {
+      console.log("DEBUG: Initializing Leaflet map");
       const map = L.map(mapRef.current, {
         zoomControl: false,
       }).setView([center.lat, center.lng], zoom)
@@ -140,50 +142,74 @@ export function OpenMap({
         maxZoom: 19,
       }).addTo(map)
 
-      // Add markers if provided
-      const markers: L.Marker[] = []
-      
-      if (pickup) {
-        const pickupIcon = L.divIcon({
-          className: 'custom-div-icon',
-          html: '<div style="background-color: #15803d; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6]
-        });
-        const pickupMarker = L.marker([pickup.lat, pickup.lng], { icon: pickupIcon }).addTo(map)
-        pickupMarker.bindPopup("<b>Pickup</b>").openPopup()
-        markers.push(pickupMarker)
-      }
-
-      if (dropoff) {
-        const dropoffIcon = L.divIcon({
-          className: 'custom-div-icon',
-          html: '<div style="background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6]
-        });
-        const dropoffMarker = L.marker([dropoff.lat, dropoff.lng], { icon: dropoffIcon }).addTo(map)
-        dropoffMarker.bindPopup("<b>Destination</b>")
-        markers.push(dropoffMarker)
-      }
-
-      // If we have both markers, fit bounds
-      if (markers.length === 2) {
-        const group = L.featureGroup(markers)
-        map.fitBounds(group.getBounds().pad(0.2))
-      }
-
       mapInstanceRef.current = map
       setIsLoading(false)
     }
 
     return () => {
       if (mapInstanceRef.current) {
+        console.log("DEBUG: Removing Leaflet map");
         mapInstanceRef.current.remove()
         mapInstanceRef.current = null
       }
     }
+  }, []) // Empty dependency array: init once
+
+  useEffect(() => {
+    // Update markers and bounds when props change
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Clear existing markers if they were tracked (simplified here)
+    // Actually, for a simple details page, we can just add them.
+    // To be safe, let's just clear all layers that aren't the tile layer.
+    map.eachLayer((layer) => {
+      if (layer instanceof L.Marker || layer instanceof L.FeatureGroup) {
+        map.removeLayer(layer);
+      }
+    });
+
+    const markers: L.Marker[] = []
+    
+    if (pickup) {
+      const pickupIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: '<div style="background-color: #15803d; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+      });
+      const pickupMarker = L.marker([pickup.lat, pickup.lng], { icon: pickupIcon }).addTo(map)
+      markers.push(pickupMarker)
+    }
+
+    if (dropoff) {
+      const dropoffIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: '<div style="background-color: #ef4444; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3);"></div>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+      });
+      const dropoffMarker = L.marker([dropoff.lat, dropoff.lng], { icon: dropoffIcon }).addTo(map)
+      markers.push(dropoffMarker)
+    }
+
+    if (markers.length === 2) {
+      const group = L.featureGroup(markers)
+      // Disable animation to prevent internal race conditions during rapid state updates
+      map.fitBounds(group.getBounds().pad(0.3), { animate: false })
+    } else if (center) {
+      map.setView([center.lat, center.lng], zoom, { animate: false })
+    }
   }, [center.lat, center.lng, zoom, pickup, dropoff])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize()
+      }
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [])
 
   return (
     <div className="relative w-full h-full min-h-[300px] bg-muted rounded-2xl overflow-hidden shadow-inner">

@@ -46,6 +46,7 @@ type RideDetails = {
     available_seats: number
     price_per_seat: number
     status: string
+    driver_id: string
   }
   driver_name: string
   vehicle_make: string | null
@@ -65,26 +66,46 @@ export default function RideDetailsPage() {
   const [bookingSeats, setBookingSeats] = useState(1)
   const [isBooking, setIsBooking] = useState(false)
   const [bookingError, setBookingError] = useState<string | null>(null)
+  const [bookingStatus, setBookingStatus] = useState<{ has_booking: boolean, booking_id: string | null } | null>(null)
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  const fetchDetails = async () => {
+    try {
+      const response = await fetch(`/api/rides/${id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setDetails(data)
+      } else {
+        setError("Ride not found or could not be loaded.")
+      }
+    } catch (err) {
+      setError("Network error. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const fetchBookingStatus = async () => {
+    if (!user) return
+    try {
+      const response = await fetch(`/api/bookings/status/${id}`, {
+        headers: getAuthHeaders()
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setBookingStatus(data)
+      }
+    } catch (err) {
+      console.error("Failed to fetch booking status", err)
+    }
+  }
 
   useEffect(() => {
-    const fetchDetails = async () => {
-      try {
-        const response = await fetch(`/api/rides/${id}`)
-        if (response.ok) {
-          const data = await response.json()
-          setDetails(data)
-        } else {
-          setError("Ride not found or could not be loaded.")
-        }
-      } catch (err) {
-        setError("Network error. Please try again.")
-      } finally {
-        setIsLoading(false)
-      }
+    if (id) {
+      fetchDetails()
+      fetchBookingStatus()
     }
-
-    if (id) fetchDetails()
-  }, [id])
+  }, [id, user])
 
   const handleBook = async () => {
     if (!user) {
@@ -109,6 +130,11 @@ export default function RideDetailsPage() {
       })
 
       if (response.ok) {
+        // Update local state immediately
+        await Promise.all([
+          fetchDetails(),
+          fetchBookingStatus()
+        ])
         router.push("/bookings")
       } else {
         const data = await response.json()
@@ -118,6 +144,49 @@ export default function RideDetailsPage() {
       setBookingError("Connection failed. Check your internet.")
     } finally {
       setIsBooking(false)
+    }
+  }
+
+  const handleCancelRide = async () => {
+    if (!confirm("Are you sure you want to cancel this ride? All confirmed passengers will be notified and refunded.")) return
+    setIsCancelling(true)
+    try {
+      const response = await fetch(`/api/rides/${id}/cancel`, {
+        method: "POST",
+        headers: getAuthHeaders()
+      })
+      if (response.ok) {
+        router.push("/bookings")
+      } else {
+        const data = await response.json()
+        alert(data.detail || "Failed to cancel ride")
+      }
+    } catch (err) {
+      alert("Failed to cancel ride")
+    } finally {
+      setIsCancelling(false)
+    }
+  }
+
+  const handleCancelBooking = async () => {
+    if (!bookingStatus?.booking_id) return
+    if (!confirm("Are you sure you want to cancel your booking?")) return
+    setIsCancelling(true)
+    try {
+      const response = await fetch(`/api/bookings/${bookingStatus.booking_id}/cancel`, {
+        method: "POST",
+        headers: getAuthHeaders()
+      })
+      if (response.ok) {
+        router.push("/bookings")
+      } else {
+        const data = await response.json()
+        alert(data.detail || "Failed to cancel booking")
+      }
+    } catch (err) {
+      alert("Failed to cancel booking")
+    } finally {
+      setIsCancelling(false)
     }
   }
 
@@ -266,71 +335,100 @@ export default function RideDetailsPage() {
           </Card>
         </div>
 
-        {/* Booking Action */}
-        <Card className="rounded-3xl border-2 border-primary shadow-xl shadow-primary/5 overflow-hidden">
-          <div className="p-6 bg-primary/5 border-b flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white shadow-sm flex items-center justify-center text-primary">
-                <Users className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase">Availability</p>
-                <p className="font-bold text-sm">{ride.available_seats} seats remaining</p>
-              </div>
-            </div>
-          </div>
-          <CardContent className="p-6 space-y-6">
-            <div className="flex items-center justify-between gap-4 bg-muted/30 p-4 rounded-2xl">
-              <div className="flex items-center gap-4">
-                <p className="font-bold text-sm">Seats</p>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="h-8 w-8 rounded-lg"
-                    onClick={() => setBookingSeats(Math.max(1, bookingSeats - 1))}
-                  >
-                    -
-                  </Button>
-                  <span className="w-8 text-center font-black text-lg">{bookingSeats}</span>
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="h-8 w-8 rounded-lg"
-                    onClick={() => setBookingSeats(Math.min(ride.available_seats, bookingSeats + 1))}
-                  >
-                    +
-                  </Button>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase">Total</p>
-                <p className="text-xl font-black text-primary leading-none">₹{bookingSeats * ride.price_per_seat}</p>
-              </div>
-            </div>
-
-            {bookingError && (
-              <div className="p-4 bg-destructive/10 text-destructive rounded-2xl text-xs font-bold text-center border border-destructive/20">
-                {bookingError}
+        {/* Booking/Management Action */}
+        {user && (user.id === ride.driver_id || bookingStatus?.has_booking) ? (
+          <div className="space-y-4 pt-4">
+            {user.id === ride.driver_id && (
+              <div className="bg-muted/50 p-4 rounded-2xl border border-dashed text-center">
+                <p className="text-sm font-bold text-muted-foreground uppercase tracking-tight">Driver Mode</p>
+                <p className="text-xs text-muted-foreground">You can cancel this ride, but details cannot be changed.</p>
               </div>
             )}
-
             <Button 
-              className="w-full h-14 rounded-2xl text-lg font-bold shadow-lg shadow-primary/20"
-              disabled={isBooking || ride.available_seats < 1}
-              onClick={handleBook}
+              variant="destructive"
+              className="w-full h-14 rounded-2xl text-lg font-bold shadow-lg shadow-destructive/20 active:scale-[0.98] transition-all"
+              disabled={isCancelling || ride.status !== 'ACTIVE'}
+              onClick={user.id === ride.driver_id ? handleCancelRide : handleCancelBooking}
             >
-              {isBooking ? (
+              {isCancelling ? (
                 <>
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Processing...
                 </>
               ) : (
-                "Confirm Booking"
+                user.id === ride.driver_id ? "Cancel Entire Ride" : "Cancel My Booking"
               )}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        ) : (
+          <Card className="rounded-3xl border-2 border-primary shadow-xl shadow-primary/5 overflow-hidden">
+            <div className="p-6 bg-primary/5 border-b flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white shadow-sm flex items-center justify-center text-primary">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Availability</p>
+                  <p className="font-bold text-sm">{ride.available_seats} seats remaining</p>
+                </div>
+              </div>
+              {ride.status !== 'ACTIVE' && (
+                <Badge variant="secondary" className="rounded-lg h-6 px-3">{ride.status}</Badge>
+              )}
+            </div>
+            <CardContent className="p-6 space-y-6">
+              <div className="flex items-center justify-between gap-4 bg-muted/30 p-4 rounded-2xl">
+                <div className="flex items-center gap-4">
+                  <p className="font-bold text-sm">Seats</p>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 rounded-lg"
+                      onClick={() => setBookingSeats(Math.max(1, bookingSeats - 1))}
+                    >
+                      -
+                    </Button>
+                    <span className="w-8 text-center font-black text-lg">{bookingSeats}</span>
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="h-8 w-8 rounded-lg"
+                      onClick={() => setBookingSeats(Math.min(ride.available_seats, bookingSeats + 1))}
+                    >
+                      +
+                    </Button>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Total</p>
+                  <p className="text-xl font-black text-primary leading-none">₹{bookingSeats * ride.price_per_seat}</p>
+                </div>
+              </div>
+
+              {bookingError && (
+                <div className="p-4 bg-destructive/10 text-destructive rounded-2xl text-xs font-bold text-center border border-destructive/20">
+                  {bookingError}
+                </div>
+              )}
+
+              <Button 
+                className="w-full h-14 rounded-2xl text-lg font-bold shadow-lg shadow-green-500/20 bg-[#15803d] hover:bg-[#166534] text-white transition-all active:scale-[0.98]"
+                disabled={isBooking || ride.available_seats < 1 || ride.status !== 'ACTIVE'}
+                onClick={handleBook}
+              >
+                {isBooking ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  ride.status !== 'ACTIVE' ? "Ride Unavailable" : "Confirm Booking"
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </main>
     </div>
   )

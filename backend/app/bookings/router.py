@@ -4,14 +4,57 @@ from sqlalchemy.orm import Session
 
 from app.common.db import get_db
 from app.bookings.service import BookingService
-from app.bookings.schemas import BookingCreateRequest, BookingResponse, BookingHistoryResponse
+from app.bookings.schemas import (
+    BookingCreateRequest, 
+    BookingResponse, 
+    BookingHistoryResponse,
+    MyBookingResponse
+)
 from app.auth.dependencies import get_current_user_id
 from app.bookings.cancel_service import CancellationService
 from app.bookings.history_model import BookingHistory
+from app.rides.models import Ride
+from app.rides.service import RideService
+
+from app.bookings.models import Booking
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
+
+
+@router.get("/my", response_model=list[MyBookingResponse])
+def get_my_bookings(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Fetch current user's active bookings with ride details."""
+    results = (
+        db.query(Booking, Ride)
+        .join(Ride, Booking.ride_id == Ride.id)
+        .filter(Booking.passenger_id == user_id)
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
+    
+    # Sync ride status for all active rides in the results
+    for _, ride in results:
+        RideService.sync_ride_status(db, ride)
+
+    return [
+        MyBookingResponse(
+            booking_id=booking.id,
+            ride_id=ride.id,
+            source=ride.source,
+            destination=ride.destination,
+            departure_time=ride.departure_time,
+            seats_booked=booking.seats_booked,
+            price_per_seat=ride.price_per_seat,
+            status=booking.status,
+            created_at=booking.created_at,
+        )
+        for booking, ride in results
+    ]
 
 
 
@@ -121,3 +164,19 @@ def get_booking_history(
         )
         for row in rows
     ]
+
+@router.get("/status/{ride_id}")
+def get_booking_status(
+    ride_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Check if the current user has a confirmed booking for this ride."""
+    booking = (
+        db.query(Booking)
+        .filter(Booking.ride_id == ride_id, Booking.passenger_id == user_id, Booking.status == "CONFIRMED")
+        .first()
+    )
+    if booking:
+        return {"has_booking": True, "booking_id": str(booking.id), "status": booking.status}
+    return {"has_booking": False, "booking_id": None, "status": None}

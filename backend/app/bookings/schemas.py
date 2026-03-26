@@ -20,3 +20,15 @@ class BookingHistoryResponse(BaseModel):
     action: str
     occurred_at: datetime
     correlation_id: str | None = None
+
+
+class MyBookingResponse(BaseModel):
+    booking_id: UUID
+    ride_id: UUID
+    source: str
+    destination: str
+    departure_time: datetime
+    seats_booked: int
+    price_per_seat: int
+    status: str
+    created_at: datetime
