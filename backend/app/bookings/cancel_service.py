@@ -72,20 +72,8 @@ class CancellationService:
         db.commit()
 
         #Invalidate Redis cache after successful cancellation
-        try:
-            cache_pattern = "rides:*"
-            for key in redis_client.scan_iter(match=cache_pattern):
-                redis_client.delete(key)
-            logger.info(
-                "Cache invalidated after booking cancellation",
-                extra={"correlation_id": correlation_id},
-            )
-        except Exception as cache_error:
-            # Log but don't fail the cancellation if cache invalidation fails
-            logger.warning(
-                f"Failed to invalidate cache: {cache_error}",
-                extra={"correlation_id": correlation_id},
-            )
+        from app.common.redis import invalidate_rides_cache
+        invalidate_rides_cache()
 
         logger.info(
             "Cancellation committed successfully",

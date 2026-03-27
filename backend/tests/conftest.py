@@ -41,9 +41,17 @@ def mock_send_otp_email():
 @pytest.fixture(autouse=True)
 def mock_redis():
     """Mock Redis for ALL tests — never requires a live Redis connection."""
-    with patch("app.rides.service.redis_client") as mock:
+    with patch("app.common.redis.redis_client") as mock:
+        mock.scan_iter.return_value = []
         mock.get.return_value = None   # always a cache miss
         mock.setex.return_value = True
+        yield mock
+
+
+@pytest.fixture(autouse=True)
+def mock_kafka():
+    """Mock Kafka for ALL tests."""
+    with patch("confluent_kafka.Producer") as mock:
         yield mock
 
 

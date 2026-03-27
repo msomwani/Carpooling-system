@@ -32,16 +32,19 @@ class BookingService:
             extra={"correlation_id": correlation_id},
         )
 
+        if seats_requested <= 0:
+            raise ValueError("Requested seats must be greater than zero")
+
         # 1️⃣ Idempotency check
-        idempo = (
+        idempotency_record = (
             db.query(BookingIdempotency)
             .filter(BookingIdempotency.idempotency_key == idempotency_key)
             .first()
         )
 
         # If idempotency record exists and has a booking_id
-        if idempo and idempo.booking_id:
-            existing_booking = db.get(Booking, idempo.booking_id)
+        if idempotency_record and idempotency_record.booking_id:
+            existing_booking = db.get(Booking, idempotency_record.booking_id)
             
             # If the booking is CONFIRMED, return it (true idempotent retry)
             if existing_booking and existing_booking.status == "CONFIRMED":
@@ -58,24 +61,24 @@ class BookingService:
                     "Previous booking was cancelled - allowing rebooking",
                     extra={"correlation_id": correlation_id},
                 )
-                idempo.booking_id = None  # Clear the link to allow rebooking
+                idempotency_record.booking_id = None  # Clear the link to allow rebooking
                 db.flush()
 
         # Create idempotency record if it doesn't exist
-        if not idempo:
-            idempo = BookingIdempotency(idempotency_key=idempotency_key)
-            db.add(idempo)
+        if not idempotency_record:
+            idempotency_record = BookingIdempotency(idempotency_key=idempotency_key)
+            db.add(idempotency_record)
             try:
                 db.flush()
             except IntegrityError:
                 db.rollback()
-                idempo = (
+                idempotency_record = (
                     db.query(BookingIdempotency)
                     .filter(BookingIdempotency.idempotency_key == idempotency_key)
                     .first()
                 )
-                if idempo and idempo.booking_id:
-                    existing_booking = db.get(Booking, idempo.booking_id)
+                if idempotency_record and idempotency_record.booking_id:
+                    existing_booking = db.get(Booking, idempotency_record.booking_id)
                     if existing_booking and existing_booking.status == "CONFIRMED":
                         logger.info(
                             "Idempotent retry detected after race - returning confirmed booking",
@@ -158,7 +161,7 @@ class BookingService:
                 cancelled_booking.seats_booked = seats_requested
                 
                 db.flush()
-                idempo.booking_id = cancelled_booking.id
+                idempotency_record.booking_id = cancelled_booking.id
 
                 # Outbox event
                 outbox_event = OutboxEvent(
@@ -175,19 +178,8 @@ class BookingService:
                 db.commit()
                 
                 # 🔥 Invalidate Redis cache after successful reactivation
-                try:
-                    cache_pattern = "rides:*"
-                    for key in redis_client.scan_iter(match=cache_pattern):
-                        redis_client.delete(key)
-                    logger.info(
-                        "Cache invalidated after booking reactivation",
-                        extra={"correlation_id": correlation_id},
-                    )
-                except Exception as cache_error:
-                    logger.warning(
-                        f"Failed to invalidate cache: {cache_error}",
-                        extra={"correlation_id": correlation_id},
-                    )
+                from app.common.redis import invalidate_rides_cache
+                invalidate_rides_cache()
                 
                 increment("booking_success_total")
                 increment("booking_reactivated_total")
@@ -216,7 +208,7 @@ class BookingService:
             db.add(booking)
             db.flush()
 
-            idempo.booking_id = booking.id
+            idempotency_record.booking_id = booking.id
 
             # Outbox event with correlation ID
             outbox_event = OutboxEvent(
@@ -234,19 +226,8 @@ class BookingService:
             db.commit()
             
             # 🔥 Invalidate Redis cache after successful booking
-            try:
-                cache_pattern = "rides:*"
-                for key in redis_client.scan_iter(match=cache_pattern):
-                    redis_client.delete(key)
-                logger.info(
-                    "Cache invalidated after new booking",
-                    extra={"correlation_id": correlation_id},
-                )
-            except Exception as cache_error:
-                logger.warning(
-                    f"Failed to invalidate cache: {cache_error}",
-                    extra={"correlation_id": correlation_id},
-                )
+            from app.common.redis import invalidate_rides_cache
+            invalidate_rides_cache()
             
             increment("booking_success_total")
 

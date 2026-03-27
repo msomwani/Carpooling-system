@@ -1,5 +1,6 @@
 import random
 import string
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ from app.config.settings import settings
 def _generate_otp() -> str:
     """Generate a random 6-digit numeric OTP."""
     return "".join(random.choices(string.digits, k=6))
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -37,10 +40,17 @@ class AuthService:
             otp_expires_at=expires_at,
         )
         db.add(user)
+        db.flush()  # Push to DB but don't commit yet
+
+        try:
+            send_otp_email(email, otp)
+        except Exception as exc:
+            db.rollback()
+            logger.error("Signup failed due to email delivery error: %s", exc)
+            raise RuntimeError(f"Signup failed: Email delivery failed: {exc}") from exc
+
         db.commit()
         db.refresh(user)
-
-        send_otp_email(email, otp)
         return user
 
     @staticmethod
@@ -90,7 +100,7 @@ class AuthService:
         return user
 
     @staticmethod
-    def google_auth(db: Session, *, id_token: str, role: str = "passenger") -> User:
+    def google_auth(db: Session, *, id_token: str) -> User:
         """Verify Google ID token and log in or create the user."""
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests
@@ -120,7 +130,7 @@ class AuthService:
                 name=name,
                 email=email,
                 password_hash=None,   # no password for Google users
-                role=role,
+                role="passenger",      # 🔥 Hardcode as passenger to prevent privilege escalation
                 is_email_verified=True,  # Google already verified it
             )
             db.add(user)

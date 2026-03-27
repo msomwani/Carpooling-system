@@ -8,7 +8,8 @@ from app.bookings.schemas import (
     BookingCreateRequest, 
     BookingResponse, 
     BookingHistoryResponse,
-    MyBookingResponse
+    MyBookingResponse,
+    BookingStatusResponse
 )
 from app.auth.dependencies import get_current_user_id
 from app.bookings.cancel_service import CancellationService
@@ -165,7 +166,7 @@ def get_booking_history(
         for row in rows
     ]
 
-@router.get("/status/{ride_id}")
+@router.get("/status/{ride_id}", response_model=BookingStatusResponse)
 def get_booking_status(
     ride_id: str,
     user_id: str = Depends(get_current_user_id),
@@ -178,5 +179,13 @@ def get_booking_status(
         .first()
     )
     if booking:
-        return {"has_booking": True, "booking_id": str(booking.id), "status": booking.status}
-    return {"has_booking": False, "booking_id": None, "status": None}
+        return BookingStatusResponse(
+            has_booking=True, 
+            booking_id=booking.id, 
+            status=booking.status
+        )
+    return BookingStatusResponse(
+        has_booking=False, 
+        booking_id=None, 
+        status=None
+    )

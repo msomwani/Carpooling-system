@@ -73,7 +73,7 @@ def verify_credentials(payload: LoginRequest, db: Session = Depends(get_db)):
 def sync_google_user(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
     """Sync/check a Google user for NextAuth Google Provider."""
     try:
-        user = AuthService.google_auth(db, id_token=payload.id_token, role=payload.role)
+        user = AuthService.google_auth(db, id_token=payload.id_token)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc))
     except RuntimeError as exc:

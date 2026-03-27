@@ -25,8 +25,12 @@ def add_vehicle(
             vehicle_type=payload.type
         )
         return vehicle
-    except Exception as e:
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/me", response_model=list[VehicleResponse])
 def get_my_vehicles(
@@ -49,4 +53,4 @@ def delete_vehicle(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

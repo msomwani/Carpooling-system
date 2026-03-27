@@ -32,3 +32,8 @@ class MyBookingResponse(BaseModel):
     price_per_seat: int
     status: str
     created_at: datetime
+
+class BookingStatusResponse(BaseModel):
+    has_booking: bool
+    booking_id: UUID | None = None
+    status: str | None = None

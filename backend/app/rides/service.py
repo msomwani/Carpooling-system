@@ -76,13 +76,10 @@ class RideService:
                 ride.status = RideStatus.COMPLETED
                 db.commit()
                 db.refresh(ride)
+                print(f"DEBUG: Synced ride {ride.id} status to COMPLETED (departure was {dept})")
                 # Invalidate cache
-                try:
-                    cache_pattern = "rides:*"
-                    for key in redis_client.scan_iter(match=cache_pattern):
-                        redis_client.delete(key)
-                except Exception:
-                    pass
+                from app.common.redis import invalidate_rides_cache
+                invalidate_rides_cache()
                 return True
         return False
 
@@ -112,6 +109,9 @@ class RideService:
                 raise ValueError("Vehicle not found")
             if str(vehicle.owner_id) != str(driver_id):
                 raise PermissionError("You do not own this vehicle")
+
+        if total_seats <= 0:
+            raise ValueError("Total seats must be greater than zero")
 
         # Validate temporal constraints
         if departure_time:
@@ -149,12 +149,8 @@ class RideService:
         db.commit()
         db.refresh(ride)
 
-        try:
-            cache_pattern = "rides:*"
-            for key in redis_client.scan_iter(match=cache_pattern):
-                redis_client.delete(key)
-        except Exception:
-            pass
+        from app.common.redis import invalidate_rides_cache
+        invalidate_rides_cache()
 
         return ride
 
@@ -229,12 +225,8 @@ class RideService:
         db.commit()
         db.refresh(ride)
 
-        try:
-            cache_pattern = "rides:*"
-            for key in redis_client.scan_iter(match=cache_pattern):
-                redis_client.delete(key)
-        except Exception:
-            pass
+        from app.common.redis import invalidate_rides_cache
+        invalidate_rides_cache()
 
         return ride
 
@@ -299,12 +291,8 @@ class RideService:
         db.commit()
         db.refresh(ride)
 
-        try:
-            cache_pattern = "rides:*"
-            for key in redis_client.scan_iter(match=cache_pattern):
-                redis_client.delete(key)
-        except Exception:
-            pass
+        from app.common.redis import invalidate_rides_cache
+        invalidate_rides_cache()
 
         return ride
 

@@ -25,4 +25,3 @@ class ResendOTPRequest(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     id_token: str
-    role: Literal["driver", "passenger"] = "passenger"
