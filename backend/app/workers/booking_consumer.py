@@ -11,9 +11,8 @@ from app.common.kafka import publish_event
 from app.config.settings import settings
 from app.events.models import ProcessedEvent
 from app.notifications.models import NotificationAttempt
-import app.rides.models  # noqa
-import app.bookings.models  # noqa
-import app.users.models  # noqa
+import app.rides.models  
+import app.bookings.models 
 
 conf = {
     "bootstrap.servers": settings.kafka_bootstrap_servers,
@@ -76,20 +75,6 @@ def _record_booking_history(db, topic: str, event: dict, payload: dict):
     db.add(history)
 
 
-def _record_notification(db, event_id: str, topic: str):
-    status = "SENT"
-    message = f"Console notification for {topic}"
-    print(message)
-    # TODO: Replace console channel with SendGrid/Twilio providers later.
-    attempt = NotificationAttempt(
-        event_id=uuid.UUID(event_id),
-        channel="console",
-        status=status,
-        error=None,
-    )
-    db.add(attempt)
-
-
 while True:
     msg = consumer.poll(1.0)
 
@@ -129,8 +114,6 @@ while True:
             db.flush()
 
             _record_booking_history(db, msg.topic(), event, payload)
-            _record_notification(db, event["event_id"], msg.topic())
-
             db.commit()
             success = True
         except IntegrityError:

@@ -9,6 +9,7 @@ from app.users.models import User
 from app.common.redis import redis_client
 from app.rides.schemas import RideResponse
 from datetime import timedelta
+from app.outbox.models import OutboxEvent
 
 # Earth radius in kilometres (mean)
 _EARTH_RADIUS_KM = 6371.0
@@ -145,7 +146,18 @@ class RideService:
             status=RideStatus.ACTIVE,
         )
 
+
         db.add(ride)
+        db.flush()  # Generate UUID if not provided
+
+        outbox_event = OutboxEvent(
+            event_type="ride.created",
+            payload={
+                "ride_id": str(ride.id),
+                "driver_id": str(ride.driver_id),
+            },
+        )
+        db.add(outbox_event)
         db.commit()
         db.refresh(ride)
 
@@ -258,18 +270,18 @@ class RideService:
             if has_passengers and is_late_cancellation:
                 raise ValueError("Cannot cancel a ride with confirmed passengers within 1.5 hours of departure.")
             
-            # If no passengers, driver can cancel anytime. If they are early enough, they get a refund.
-            if not has_passengers and not is_late_cancellation:
-                # Trigger driver refund event
-                outbox_event = OutboxEvent(
-                    event_type="ride.cancelled_by_driver_refund",
-                    payload={
-                        "ride_id": str(ride.id),
-                        "driver_id": str(ride.driver_id),
-                        "correlation_id": correlation_id,
-                    },
-                )
-                db.add(outbox_event)
+            # Trigger driver cancellation event
+            outbox_event = OutboxEvent(
+                event_type="ride.cancelled",
+                payload={
+                    "ride_id": str(ride.id),
+                    "driver_id": str(ride.driver_id),
+                    "has_passengers": has_passengers,
+                    "is_late": is_late_cancellation,
+                    "correlation_id": correlation_id,
+                },
+            )
+            db.add(outbox_event)
 
         # 3. Cascade cancellation to passengers
         for booking in active_bookings:
