@@ -47,6 +47,7 @@ type RideDetails = {
     price_per_seat: number
     status: string
     driver_id: string
+    route_geometry: string | null
   }
   driver_name: string
   vehicle_make: string | null
@@ -238,6 +239,7 @@ export default function RideDetailsPage() {
             <OpenMap 
               pickup={{ lat: ride.source_lat, lng: ride.source_lng }}
               dropoff={ride.destination_lat && ride.destination_lng ? { lat: ride.destination_lat, lng: ride.destination_lng } : undefined}
+              route={ride.route_geometry || undefined}
               zoom={12} 
             />
             <div className="absolute bottom-3 left-3 right-3 bg-background/90 backdrop-blur-sm p-2 rounded-xl border text-[10px] font-bold uppercase tracking-tight text-muted-foreground text-center">
@@ -285,7 +287,7 @@ export default function RideDetailsPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">Date</p>
-                  <p className="font-bold text-sm">{departureDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                  <p className="font-bold text-sm" suppressHydrationWarning>{departureDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -294,7 +296,7 @@ export default function RideDetailsPage() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">Time</p>
-                  <p className="font-bold text-sm">{departureDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="font-bold text-sm" suppressHydrationWarning>{departureDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
               </div>
             </div>

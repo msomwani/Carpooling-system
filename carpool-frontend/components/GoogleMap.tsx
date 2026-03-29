@@ -117,13 +117,35 @@ interface OpenMapProps {
   zoom?: number
   pickup?: { lat: number; lng: number }
   dropoff?: { lat: number; lng: number }
+  route?: string // WKT string: "LINESTRING(lng lat, lng lat, ...)"
+}
+
+const parseWKT = (wkt: string): [number, number][] => {
+  if (!wkt) return []
+  const cleanWkt = wkt.trim().toUpperCase()
+  if (!cleanWkt.includes("LINESTRING")) return []
+  
+  try {
+    const coordsStr = wkt.substring(wkt.indexOf("(") + 1, wkt.lastIndexOf(")"))
+    return coordsStr.split(",").map(pair => {
+      const parts = pair.trim().split(/\s+/)
+      if (parts.length < 2) return null
+      const [lng, lat] = parts.map(Number)
+      if (isNaN(lat) || isNaN(lng)) return null
+      return [lat, lng] as [number, number]
+    }).filter((p): p is [number, number] => p !== null)
+  } catch (e) {
+    console.error("Error parsing WKT:", e)
+    return []
+  }
 }
 
 export function OpenMap({ 
   center = { lat: 22.3072, lng: 73.1812 }, 
   zoom = 12,
   pickup,
-  dropoff
+  dropoff,
+  route
 }: OpenMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<L.Map | null>(null)
@@ -160,12 +182,12 @@ export function OpenMap({
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Clear existing markers if they were tracked (simplified here)
-    // Actually, for a simple details page, we can just add them.
-    // To be safe, let's just clear all layers that aren't the tile layer.
+    // Clear existing markers and polylines
     map.eachLayer((layer) => {
-      if (layer instanceof L.Marker || layer instanceof L.FeatureGroup) {
-        map.removeLayer(layer);
+      if (layer instanceof L.Marker || layer instanceof L.Polyline || layer instanceof L.FeatureGroup) {
+        if (!(layer instanceof L.TileLayer)) {
+          map.removeLayer(layer);
+        }
       }
     });
 
@@ -193,14 +215,28 @@ export function OpenMap({
       markers.push(dropoffMarker)
     }
 
-    if (markers.length === 2) {
-      const group = L.featureGroup(markers)
-      // Disable animation to prevent internal race conditions during rapid state updates
+    let routeLayer: L.Polyline | null = null
+    if (route) {
+      const latLngs = parseWKT(route)
+      if (latLngs.length > 0) {
+        routeLayer = L.polyline(latLngs, {
+          color: "#2563eb", // Brighter blue for better visibility
+          weight: 5,
+          opacity: 0.8,
+          lineJoin: "round"
+        }).addTo(map)
+      }
+    }
+
+    if (markers.length > 0 || routeLayer) {
+      const items: (L.Layer)[] = [...markers]
+      if (routeLayer) items.push(routeLayer)
+      const group = L.featureGroup(items)
       map.fitBounds(group.getBounds().pad(0.3), { animate: false })
     } else if (center) {
       map.setView([center.lat, center.lng], zoom, { animate: false })
     }
-  }, [center.lat, center.lng, zoom, pickup, dropoff])
+  }, [center.lat, center.lng, zoom, pickup, dropoff, route])
 
   useEffect(() => {
     const timer = setTimeout(() => {

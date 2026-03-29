@@ -53,9 +53,25 @@ class RideResponse(BaseModel):
     @field_validator("route_geometry", mode="before")
     @classmethod
     def convert_geometry(cls, v):
-        if v is None or isinstance(v, str):
+        if v is None:
             return v
-        return None # Avoid validation error for WKBElement if shapely is missing
+            
+        # If it's already a WKT string (which we now enforce in the Service layer), return as is
+        if isinstance(v, str) and (v.startswith("LINESTRING") or v.startswith("POINT")):
+            return v
+            
+        # Fallback for hex WKB (if ST_AsText wasn't used)
+        if isinstance(v, str):
+            # We don't need shapely here if we trust the Service layer uses ST_AsText.
+            # However, we'll keep it safe by returning what we have.
+            return v
+                
+        # Handle GeoAlchemy2 WKBElement by returning its string representation (usually Hex)
+        # The Service layer should use ST_AsText to avoid this fallback.
+        try:
+            return str(v)
+        except Exception:
+            return None
 
 
 class RideDetailResponse(BaseModel):

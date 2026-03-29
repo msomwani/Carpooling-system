@@ -101,7 +101,7 @@ class TestBookingService:
         )
         
         # Act & Assert - Try to create another booking
-        with pytest.raises(ValueError, match="already have an active booking"):
+        with pytest.raises(ValueError, match="already have a confirmed booking"):
             BookingService.create_booking(
                 db=db,
                 ride_id=sample_ride.id,

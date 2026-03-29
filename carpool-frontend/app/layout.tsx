@@ -32,6 +32,7 @@ export default function RootLayout({
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
         <GoogleOAuthProvider clientId="403477193934-b7cahbs2e3kkobclbno63upat04c0at5.apps.googleusercontent.com">
           <AuthProvider>

@@ -14,6 +14,22 @@ from app.outbox.models import OutboxEvent
 # Earth radius in kilometres (mean)
 _EARTH_RADIUS_KM = 6371.0
 
+# Predefined locations for "Smart Search" mapping
+COMMON_LOCATIONS = {
+    "tandalja": {"lat": 22.2890, "lng": 73.1520},
+    "airport": {"lat": 22.3275, "lng": 73.2165},
+    "amit nagar": {"lat": 22.3215, "lng": 73.2030},
+    "golden chowdi": {"lat": 22.3395, "lng": 73.2201},
+    "jarod": {"lat": 22.4285, "lng": 73.3850},
+    "nimeta": {"lat": 22.3850, "lng": 73.3500},
+    "halol": {"lat": 22.4980, "lng": 73.4735},
+    "vuda": {"lat": 22.3200, "lng": 73.2100},
+    "sayajigunj": {"lat": 22.3100, "lng": 73.1850},
+    "station": {"lat": 22.3106, "lng": 73.1812},
+    "central bus": {"lat": 22.3106, "lng": 73.1812},
+    "pavagadh": {"lat": 22.5035, "lng": 73.4852},
+}
+
 
 class RideService:
 
@@ -182,11 +198,21 @@ class RideService:
     def get_ride_by_id(db: Session, ride_id: str):
         """Fetch a specific ride by ID, including driver and vehicle details."""
         from app.vehicles.models import Vehicle
+        from geoalchemy2 import functions as ga_func
         
         ride = db.query(Ride).filter(Ride.id == ride_id).first()
         if not ride:
             return None
         
+        # Use a fresh query to get WKT to avoid session state issues with Geography type
+        if ride.route_geometry:
+            try:
+                wkt = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == ride_id).scalar()
+                if wkt:
+                    ride.route_geometry = wkt
+            except Exception:
+                pass # Fallback to whatever's in the object (handled by schema)
+
         # Sync status before returning
         RideService.sync_ride_status(db, ride)
         
@@ -210,6 +236,7 @@ class RideService:
     @staticmethod
     def get_driver_rides(db: Session, driver_id: str):
         """Fetch all rides created by the given driver, ordered by descending departure time."""
+        from geoalchemy2 import functions as ga_func
         rides = (
             db.query(Ride)
             .filter(Ride.driver_id == driver_id)
@@ -218,6 +245,8 @@ class RideService:
         )
         for r in rides:
             RideService.sync_ride_status(db, r)
+            if r.route_geometry:
+                r.route_geometry = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == r.id).scalar()
         return rides
 
     @staticmethod
@@ -318,17 +347,38 @@ class RideService:
         role: str = "source",
     ) -> list[Ride]:
         """
-        Find ACTIVE rides whose source or destination coordinates fall within
-        *radius_km* of the given (lat, lng) using PostGIS ST_DWithin.
+        Find ACTIVE rides within *radius_km* of a given (lat, lng).
+
+        Modes (role):
+        - "source"      — matches rides whose starting point is nearby.
+        - "destination" — matches rides whose ending point is nearby.
+        - "path"        — matches rides whose full route geometry (LineString)
+                          passes within radius_km of the point. Rides without
+                          a stored route_geometry are excluded.
         """
+        # PostGIS expects metres; convert km → m
+        radius_m = radius_km * 1000
+        search_point = f"SRID=4326;POINT({lng} {lat})"
+
+        if role == "path":
+            return (
+                db.query(Ride)
+                .filter(
+                    Ride.route_geometry.isnot(None),
+                    Ride.available_seats > 0,
+                    Ride.status == RideStatus.ACTIVE,
+                    Ride.departure_time > sa_func.now(),
+                    sa_func.ST_DWithin(Ride.route_geometry, search_point, radius_m),
+                )
+                .all()
+            )
+
+        # Source / destination point-based fallback
         if role == "source":
             loc_col = Ride.source_location
         else:
             loc_col = Ride.destination_location
 
-        # PostGIS ST_DWithin: radius_km * 1000 for meters
-        search_point = f"POINT({lng} {lat})"
-        
         return (
             db.query(Ride)
             .filter(
@@ -336,10 +386,19 @@ class RideService:
                 Ride.available_seats > 0,
                 Ride.status == RideStatus.ACTIVE,
                 Ride.departure_time > sa_func.now(),
-                sa_func.ST_DWithin(loc_col, search_point, radius_km * 1000),
+                sa_func.ST_DWithin(loc_col, search_point, radius_m),
             )
             .all()
         )
+
+    @staticmethod
+    def _geocode(name: str) -> tuple[float, float] | None:
+        """Simple mapping of common names to coordinates."""
+        clean_name = name.lower().strip()
+        for key, coords in COMMON_LOCATIONS.items():
+            if key in clean_name:
+                return coords["lat"], coords["lng"]
+        return None
 
     @staticmethod
     def search_rides(
@@ -354,14 +413,39 @@ class RideService:
         if cached:
             return json.loads(cached)
 
-        rides = db.query(Ride).filter(
-            Ride.source == source,
-            Ride.destination == destination,
+        query = db.query(Ride).filter(
             Ride.available_seats > 0,
             Ride.status == RideStatus.ACTIVE,
             Ride.departure_time > sa_func.now(),
-        ).all()
+        )
 
-        result = [RideResponse.model_validate(r) for r in rides]
+        s_coords = RideService._geocode(source)
+        d_coords = RideService._geocode(destination)
+
+        if s_coords and d_coords:
+            # Smart Spatial Search: Both source and destination points must be near the route
+            s_point = f"SRID=4326;POINT({s_coords[1]} {s_coords[0]})"
+            d_point = f"SRID=4326;POINT({d_coords[1]} {d_coords[0]})"
+            query = query.filter(
+                Ride.route_geometry.isnot(None),
+                sa_func.ST_DWithin(Ride.route_geometry, s_point, 5000), # 5km tolerance
+                sa_func.ST_DWithin(Ride.route_geometry, d_point, 5000), # 5km tolerance
+            )
+        else:
+            # Fallback to substring matching
+            query = query.filter(
+                Ride.source.ilike(f"%{source}%"),
+                Ride.destination.ilike(f"%{destination}%"),
+            )
+
+        runs = query.all()
+        
+        # Convert geometry to WKT for all results
+        from geoalchemy2 import functions as ga_func
+        for r in runs:
+            if r.route_geometry:
+                r.route_geometry = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == r.id).scalar()
+                
+        result = [RideResponse.model_validate(r) for r in runs]
         redis_client.setex(cache_key, 60, json.dumps([r.model_dump(mode="json") for r in result]))
         return result

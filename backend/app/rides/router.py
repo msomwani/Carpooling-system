@@ -88,15 +88,21 @@ def search_rides_nearby(
     lat: float = Query(..., ge=-90, le=90),
     lng: float = Query(..., ge=-180, le=180),
     radius_km: float = Query(10.0, gt=0, le=500),
-    role: str = Query("source", pattern="^(source|destination)$"),
+    role: str = Query("source", pattern="^(source|destination|path)$"),
     db: Session = Depends(get_db),
 ):
-    """Find ACTIVE rides within *radius_km* of (lat, lng)."""
+    """
+    Find ACTIVE rides within *radius_km* of (lat, lng).
+
+    - **role=source** (default): rides starting near the point.
+    - **role=destination**: rides ending near the point.
+    - **role=path**: rides whose full route passes near the point (uses `route_geometry` LineString).
+    """
     rides = RideService.search_nearby(db, lat=lat, lng=lng, radius_km=radius_km, role=role)
     return rides
 
 
-@router.get("/", response_model=list[RideResponse])
+@router.get("", response_model=list[RideResponse])
 def search_rides(
     source: str,
     destination: str,

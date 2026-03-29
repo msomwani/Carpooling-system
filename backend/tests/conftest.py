@@ -87,8 +87,8 @@ def client(db):
         finally:
             pass
     
-    from app.common.db import SessionLocal
-    app.dependency_overrides[SessionLocal] = override_get_db
+    from app.common.db import get_db
+    app.dependency_overrides[get_db] = override_get_db
     
     with TestClient(app) as test_client:
         yield test_client
