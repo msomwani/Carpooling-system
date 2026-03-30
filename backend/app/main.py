@@ -1,8 +1,11 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
 from sqlalchemy import text
 
 from app.common.logging_config import setup_logging
@@ -19,10 +22,43 @@ from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
 from app.vehicles.router import router as vehicles_router
 from app.config.settings import settings
+from app.auth.router import limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.middleware import SlowAPIMiddleware
 
 setup_logging()
 
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Inject security-hardening HTTP response headers on every response."""
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response = await call_next(request)
+        # Prevent MIME-type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        # Block embedding in iframes (clickjacking protection)
+        response.headers["X-Frame-Options"] = "DENY"
+        # Force HTTPS (enable only when TLS is active in production)
+        # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        # Content Security Policy — tighten per your frontend needs
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src * data: blob:; "
+            "connect-src *;"
+        )
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -75,5 +111,8 @@ def readiness_check():
 
 
 @app.get("/metrics")
-def metrics():
+def metrics(request: Request):
+    """Protected metrics endpoint — requires X-Metrics-Key header matching METRICS_API_KEY env var."""
+    if not settings.metrics_api_key or request.headers.get("X-Metrics-Key") != settings.metrics_api_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return get_metrics()

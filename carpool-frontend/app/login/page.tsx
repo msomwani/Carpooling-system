@@ -38,6 +38,7 @@ export default function LoginPage() {
       const syncRes = await fetch(`${API_URL}/auth/sync-google-user`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include", // required so browser stores the HTTP-only cookie
         body: JSON.stringify({ id_token: idToken, role: "passenger" }),
       })
       if (!syncRes.ok) {
@@ -46,15 +47,12 @@ export default function LoginPage() {
       }
       const backendUser = await syncRes.json()
 
-      login(
-        {
-          id: backendUser.id,
-          name: backendUser.name,
-          email: backendUser.email,
-          role: backendUser.role ?? "passenger",
-        },
-        backendUser.token,
-      )
+      login({
+        id: backendUser.id,
+        name: backendUser.name,
+        email: backendUser.email,
+        role: backendUser.role ?? "passenger",
+      })
 
       router.push("/")
     } catch (e: unknown) {

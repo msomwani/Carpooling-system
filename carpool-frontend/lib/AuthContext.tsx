@@ -12,76 +12,72 @@ interface User {
 
 interface AuthContextType {
   user: User | null
-  token: string | null
   isLoading: boolean
   logout: () => void
-  login: (user: User, token: string) => void
+  login: (user: User) => void
   getAuthHeaders: () => Record<string, string>
 }
 
 const USER_KEY = "croc_ride_user"
-const TOKEN_KEY = "croc_ride_token"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
 
-  // Rehydrate from localStorage on mount
+  // Rehydrate user profile from localStorage on mount.
+  // NOTE: Only the non-sensitive user object (name, email, role) is stored in
+  // localStorage. The JWT itself lives exclusively in an HTTP-only cookie that
+  // JavaScript cannot read or steal via XSS.
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem(USER_KEY)
-      const storedToken = localStorage.getItem(TOKEN_KEY)
-      
-      // If we have a user but no token, this is a stale session from the old auth system.
-      // Clear it so the user is forced to log in again and get a proper JWT.
-      if (storedUser && !storedToken) {
-        localStorage.removeItem(USER_KEY)
-        localStorage.removeItem(TOKEN_KEY)
-        setUser(null)
-        setToken(null)
-      } else {
-        if (storedUser) setUser(JSON.parse(storedUser))
-        if (storedToken) setToken(storedToken)
-      }
+      if (storedUser) setUser(JSON.parse(storedUser))
     } catch {
       localStorage.removeItem(USER_KEY)
-      localStorage.removeItem(TOKEN_KEY)
     } finally {
       setIsLoading(false)
     }
   }, [])
 
-  const login = (userData: User, accessToken: string) => {
+  /** Called after a successful Google login. Stores only public user info; token is in the cookie. */
+  const login = (userData: User) => {
     localStorage.setItem(USER_KEY, JSON.stringify(userData))
-    localStorage.setItem(TOKEN_KEY, accessToken)
     setUser(userData)
-    setToken(accessToken)
   }
 
-  const logout = () => {
+  const logout = async () => {
+    // Tell the server to expire the HTTP-only cookie.
+    // JavaScript cannot delete HTTP-only cookies itself — the server must do it.
+    try {
+      await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include", // required to send/receive cookies cross-origin
+      })
+    } catch {
+      // Best-effort — proceed with local cleanup even if the request fails.
+    }
     localStorage.removeItem(USER_KEY)
-    localStorage.removeItem(TOKEN_KEY)
     setUser(null)
-    setToken(null)
     router.push("/")
   }
 
-  /** Returns headers with Authorization Bearer token for authenticates API calls */
+  /**
+   * Returns headers for authenticated API calls.
+   * 
+   * The JWT is in an HTTP-only cookie, so there is no Authorization header.
+   * Instead, callers MUST use `credentials: "include"` in fetch so the browser
+   * automatically attaches the cookie to every request.
+   */
   const getAuthHeaders = (): Record<string, string> => {
-    const storedToken = token || localStorage.getItem(TOKEN_KEY)
-    if (!storedToken) return { "Content-Type": "application/json" }
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${storedToken}`,
-    }
+    return { "Content-Type": "application/json" }
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, logout, login, getAuthHeaders }}>
+    <AuthContext.Provider value={{ user, isLoading, logout, login, getAuthHeaders }}>
       {children}
     </AuthContext.Provider>
   )

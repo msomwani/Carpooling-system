@@ -58,6 +58,7 @@ export default function BookingsPage() {
     try {
       const response = await fetch("/api/bookings/history", {
         headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         const data = await response.json()
@@ -81,6 +82,7 @@ export default function BookingsPage() {
     try {
       const response = await fetch("/api/rides/me", {
         headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         const data = await response.json()
@@ -112,6 +114,7 @@ export default function BookingsPage() {
       const response = await fetch(`/api/bookings/${bookingId}/cancel`, {
         method: "POST",
         headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) fetchPassengerData()
     } catch (error) {

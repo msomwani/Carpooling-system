@@ -24,7 +24,10 @@ def upgrade() -> None:
     op.add_column('rides', sa.Column('source_location', Geography(geometry_type='POINT', srid=4326, spatial_index=True), nullable=True))
     op.add_column('rides', sa.Column('destination_location', Geography(geometry_type='POINT', srid=4326, spatial_index=True), nullable=True))
     
-    # Backfill existing data
+    # Security note: this SQL is safe from injection because:
+    # - All identifiers (source_lng, source_lat, etc.) are hardcoded column names, not user input.
+    # - There are no string interpolations or f-strings with external values.
+    # - The WHERE clause also only references static column names.
     op.execute('''
         UPDATE rides 
         SET source_location = ST_SetSRID(ST_MakePoint(source_lng, source_lat), 4326)::geography,

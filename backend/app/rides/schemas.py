@@ -6,19 +6,19 @@ from pydantic import BaseModel, Field, field_validator, model_validator, ConfigD
 
 
 class RideCreateRequest(BaseModel):
-    source: str
+    source: str = Field(..., min_length=2, max_length=200)
     source_lat: float | None = Field(default=None, ge=-90, le=90)
     source_lng: float | None = Field(default=None, ge=-180, le=180)
 
-    destination: str
+    destination: str = Field(..., min_length=2, max_length=200)
     destination_lat: float | None = Field(default=None, ge=-90, le=90)
     destination_lng: float | None = Field(default=None, ge=-180, le=180)
 
     departure_time: datetime
-    total_seats: int = Field(gt=0)
-    price_per_seat: int = Field(ge=0)
+    total_seats: int = Field(gt=0, le=8)  # No ride should have more than 8 seats
+    price_per_seat: int = Field(ge=0, le=10000)  # Reasonable max price cap
     vehicle_id: UUID
-    route_geometry: str | None = None  # WKT or GeoJSON string
+    route_geometry: str | None = Field(default=None, max_length=100000)  # WKT or GeoJSON string
 
     @model_validator(mode="after")
     def validate_coordinate_pairs(self):

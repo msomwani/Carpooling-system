@@ -75,7 +75,7 @@ function CreateRideContent() {
     // Fetch vehicles
     const fetchVehicles = async () => {
       try {
-        const res = await fetch("/api/vehicles/me", { headers: getAuthHeaders() })
+        const res = await fetch("/api/vehicles/me", { headers: getAuthHeaders(), credentials: "include" })
         if (res.ok) {
           const data = await res.json()
           setVehicles(data)
@@ -343,6 +343,7 @@ function CreateRideContent() {
       const response = await fetch("/api/rides/", {
         method: "POST",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify(payload),
       })
 

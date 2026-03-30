@@ -1,22 +1,25 @@
-from fastapi import Request, HTTPException
+from fastapi import Cookie, HTTPException
 from jose import jwt, JWTError
+from typing import Optional
 
 from app.config.settings import settings
 
 ALGORITHM = "HS256"
+_COOKIE_NAME = "access_token"
 
-def get_current_user_id(request: Request) -> str:
-    token = None
-    auth_header = request.headers.get("Authorization")
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
 
-    if not token:
+def get_current_user_id(access_token: Optional[str] = Cookie(default=None)) -> str:
+    """Extract and validate the JWT from the HTTP-only 'access_token' cookie.
+
+    Using a cookie (instead of Authorization header) prevents XSS attacks from
+    stealing the token, since HTTP-only cookies are inaccessible to JavaScript.
+    """
+    if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
         payload = jwt.decode(
-            token,
+            access_token,
             settings.jwt_secret,
             algorithms=[ALGORITHM],
         )

@@ -111,7 +111,7 @@ export default function LandingPage() {
 
   const fetchLastDriverRide = async () => {
     try {
-      const response = await fetch("/api/rides/me", { headers: getAuthHeaders() })
+      const response = await fetch("/api/rides/me", { headers: getAuthHeaders(), credentials: "include" })
       if (response.ok) {
         const data = await response.json()
         if (data.length > 0) {

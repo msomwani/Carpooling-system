@@ -23,6 +23,7 @@ export function RoleSwitcher() {
       const res = await fetch(`${API_URL}/users/me/role`, {
         method: "PATCH",
         headers: getAuthHeaders(),
+        credentials: "include",
         body: JSON.stringify({ role: newRole }),
       })
       if (!res.ok) {

@@ -103,7 +103,8 @@ export default function AccountPage() {
   const fetchVehicles = async () => {
     try {
       const response = await fetch("/api/vehicles/me", {
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         const data = await response.json()
@@ -140,6 +141,7 @@ export default function AccountPage() {
           ...getAuthHeaders(),
           "Content-Type": "application/json"
         },
+        credentials: "include",
         body: JSON.stringify(newVehicle)
       })
 
@@ -160,7 +162,8 @@ export default function AccountPage() {
     try {
       const response = await fetch(`/api/vehicles/${id}`, {
         method: "DELETE",
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         setVehicles(vehicles.filter((v) => v.id !== id))

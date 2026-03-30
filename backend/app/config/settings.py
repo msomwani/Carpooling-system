@@ -16,13 +16,7 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = Field(validation_alias="KAFKA_BOOTSTRAP_SERVERS")
     jwt_secret: str = Field(validation_alias="JWT_SECRET")
     google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
-    
-    # Email (SMTP)
-    smtp_server: str = Field(default="", validation_alias="SMTP_SERVER")
-    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
-    smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
-    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
-    smtp_from_email: str = Field(default="noreply@crocride.com", validation_alias="SMTP_FROM_EMAIL")
+    metrics_api_key: str = Field(default="", validation_alias="METRICS_API_KEY")
 
     cors_origins: list[str] = Field(
         default_factory=lambda: [
@@ -44,7 +38,14 @@ class Settings(BaseSettings):
         validation_alias="CORS_ALLOW_METHODS",
     )
     cors_allow_headers: list[str] = Field(
-        default_factory=lambda: ["*"],
+        default_factory=lambda: [
+            "Content-Type",
+            "Authorization",
+            "Accept",
+            "Origin",
+            "X-Request-ID",
+            "Idempotency-Key",
+        ],
         validation_alias="CORS_ALLOW_HEADERS",
     )
 

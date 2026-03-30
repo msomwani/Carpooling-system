@@ -34,7 +34,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
-        <GoogleOAuthProvider clientId="403477193934-b7cahbs2e3kkobclbno63upat04c0at5.apps.googleusercontent.com">
+        <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
           <AuthProvider>
             <RoleProvider>
               <main className="pb-16">{children}</main>

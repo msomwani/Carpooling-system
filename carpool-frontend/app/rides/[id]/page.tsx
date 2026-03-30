@@ -90,7 +90,8 @@ export default function RideDetailsPage() {
     if (!user) return
     try {
       const response = await fetch(`/api/bookings/status/${id}`, {
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         const data = await response.json()
@@ -124,6 +125,7 @@ export default function RideDetailsPage() {
           ...getAuthHeaders(),
           "Idempotency-Key": `${id}-${Date.now()}`
         },
+        credentials: "include",
         body: JSON.stringify({
           ride_id: id,
           seats: bookingSeats
@@ -154,7 +156,8 @@ export default function RideDetailsPage() {
     try {
       const response = await fetch(`/api/rides/${id}/cancel`, {
         method: "POST",
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         router.push("/bookings")
@@ -176,7 +179,8 @@ export default function RideDetailsPage() {
     try {
       const response = await fetch(`/api/bookings/${bookingStatus.booking_id}/cancel`, {
         method: "POST",
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
+        credentials: "include",
       })
       if (response.ok) {
         router.push("/bookings")
