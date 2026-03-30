@@ -22,7 +22,7 @@ import dynamic from "next/dynamic"
 
 // Dynamically import the map to prevent SSR issues with Leaflet
 const OpenMap = dynamic(
-  () => import("@/components/GoogleMap").then((mod) => mod.OpenMap),
+  () => import("@/components/OpenMap").then((mod) => mod.OpenMap),
   {
     ssr: false,
     loading: () => (

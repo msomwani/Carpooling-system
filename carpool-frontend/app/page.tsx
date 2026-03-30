@@ -34,7 +34,7 @@ type DriverRide = {
 
 // Dynamically import the map and disable Server-Side Rendering (SSR)
 const OpenMap = dynamic(
-  () => import("@/components/GoogleMap").then((mod) => mod.OpenMap),
+  () => import("@/components/OpenMap").then((mod) => mod.OpenMap),
   {
     ssr: false,
     loading: () => (

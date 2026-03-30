@@ -13,8 +13,6 @@ CREATE TABLE users (
     phone_number VARCHAR(20),
     phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
     is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
-    otp_code VARCHAR(6),
-    otp_expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

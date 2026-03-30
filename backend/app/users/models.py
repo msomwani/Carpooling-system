@@ -20,7 +20,5 @@ class User(Base):
 
     # Email verification
     is_email_verified = Column(Boolean, nullable=False, default=False)
-    otp_code = Column(String(6), nullable=True)
-    otp_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -2,72 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.common.db import get_db
-from app.auth.schemas import (
-    SignupRequest,
-    LoginRequest,
-    VerifyOTPRequest,
-    ResendOTPRequest,
-    GoogleAuthRequest,
-)
+from app.auth.schemas import GoogleAuthRequest
 from app.auth.service import AuthService
 from app.auth.security import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
-
-
-@router.post("/signup", status_code=201)
-def signup(payload: SignupRequest, db: Session = Depends(get_db)):
-    """Register a new user. Sends an OTP to verify the email."""
-    try:
-        user = AuthService.signup(db, **payload.model_dump())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {
-        "message": "Account created. Please check your email for the OTP to verify your account.",
-        "email": user.email,
-    }
-
-
-@router.post("/verify-otp")
-def verify_otp(payload: VerifyOTPRequest, db: Session = Depends(get_db)):
-    """Verify an OTP code."""
-    try:
-        user = AuthService.verify_otp(db, email=payload.email, otp=payload.otp)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    return {"message": "Email verified successfully.", "user_id": str(user.id)}
-
-
-@router.post("/resend-otp")
-def resend_otp(payload: ResendOTPRequest, db: Session = Depends(get_db)):
-    """Resend a fresh OTP to the given email."""
-    try:
-        AuthService.resend_otp(db, email=payload.email)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {"message": "A new OTP has been sent to your email."}
-
-
-@router.post("/verify-credentials")
-def verify_credentials(payload: LoginRequest, db: Session = Depends(get_db)):
-    """Standard email+password login check for NextAuth Credentials Provider."""
-    user = AuthService.authenticate(db, email=payload.email, password=payload.password)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    if not user.is_email_verified:
-        raise HTTPException(
-            status_code=403,
-            detail="Email not verified. Please check your inbox for the OTP or request a new one at /auth/resend-otp",
-        )
-
-    return {
-        "id": str(user.id),
-        "name": user.name,
-        "email": user.email,
-        "role": user.role
-    }
-
 
 @router.post("/sync-google-user")
 def sync_google_user(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
@@ -75,9 +14,9 @@ def sync_google_user(payload: GoogleAuthRequest, db: Session = Depends(get_db)):
     try:
         user = AuthService.google_auth(db, id_token=payload.id_token)
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc))
+        raise HTTPException(status_code=401, detail="Authentication failed")
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Service unavailable")
 
     return {
         "id": str(user.id),

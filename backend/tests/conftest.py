@@ -31,11 +31,7 @@ test_engine = create_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 
-@pytest.fixture(autouse=True)
-def mock_send_otp_email():
-    """Mock email sending for ALL tests — never hits real AWS SES."""
-    with patch("app.auth.service.send_otp_email") as mock:
-        yield mock
+
 
 
 @pytest.fixture(autouse=True)

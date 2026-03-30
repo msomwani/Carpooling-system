@@ -14,11 +14,8 @@ class Settings(BaseSettings):
     database_url: str = Field(validation_alias="DATABASE_URL")
     redis_url: str = Field(validation_alias="REDIS_URL")
     kafka_bootstrap_servers: str = Field(validation_alias="KAFKA_BOOTSTRAP_SERVERS")
-    # Auth
     jwt_secret: str = Field(validation_alias="JWT_SECRET")
     google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
-    google_maps_api_key: str = Field(default="", validation_alias="GOOGLE_MAPS_API_KEY")
-    otp_expiry_minutes: int = Field(default=10, validation_alias="OTP_EXPIRY_MINUTES")
     
     # Email (SMTP)
     smtp_server: str = Field(default="", validation_alias="SMTP_SERVER")
