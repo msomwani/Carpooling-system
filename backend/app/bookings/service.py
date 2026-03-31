@@ -118,18 +118,25 @@ class BookingService:
                     increment("booking_failure_total")
                     raise ValueError(str(e))
 
-            # 3️⃣ Check for existing CONFIRMED booking to prevent duplicates
-            existing_confirmed_booking = (
+            # 3️⃣ Check for existing booking to prevent duplicates or resume payment
+            existing_booking = (
                 db.query(Booking)
                 .filter(
                     Booking.ride_id == ride_id,
                     Booking.passenger_id == passenger_id,
-                    Booking.status == "CONFIRMED"
+                    Booking.status.in_(["PENDING_PAYMENT", "PAID_HELD", "CONFIRMED"]),
                 )
                 .first()
             )
-
-            if existing_confirmed_booking:
+            
+            if existing_booking:
+                if existing_booking.status == "PENDING_PAYMENT":
+                    logger.info(
+                        "Returning existing pending booking",
+                        extra={"correlation_id": correlation_id},
+                    )
+                    return existing_booking
+                
                 increment("booking_failure_total")
                 raise ValueError("You already have an active booking for this ride")
 
@@ -157,7 +164,8 @@ class BookingService:
                     raise ValueError("Not enough seats available")
                 
                 ride.available_seats -= seats_requested
-                cancelled_booking.status = "CONFIRMED"
+                # Recative it as PENDING_PAYMENT to force payment again
+                cancelled_booking.status = "PENDING_PAYMENT"
                 cancelled_booking.seats_booked = seats_requested
                 
                 db.flush()
@@ -165,7 +173,7 @@ class BookingService:
 
                 # Outbox event
                 outbox_event = OutboxEvent(
-                    event_type="booking.confirmed",
+                    event_type="booking.pending",
                     payload={
                         "booking_id": str(cancelled_booking.id),
                         "ride_id": str(cancelled_booking.ride_id),
@@ -177,17 +185,13 @@ class BookingService:
                 db.add(outbox_event)
                 db.commit()
                 
-                # 🔥 Invalidate Redis cache after successful reactivation
+                # Invalidate Redis cache
                 from app.common.redis import invalidate_rides_cache
                 invalidate_rides_cache()
                 
                 increment("booking_success_total")
                 increment("booking_reactivated_total")
                 
-                logger.info(
-                    "Booking reactivated successfully",
-                    extra={"correlation_id": correlation_id},
-                )
                 return cancelled_booking
 
             # 5️⃣ Create new booking if none exists
@@ -202,7 +206,7 @@ class BookingService:
                 ride_id=ride_id,
                 passenger_id=passenger_id,
                 seats_booked=seats_requested,
-                status="CONFIRMED",
+                status="PENDING_PAYMENT",
             )
 
             db.add(booking)
@@ -212,7 +216,7 @@ class BookingService:
 
             # Outbox event with correlation ID
             outbox_event = OutboxEvent(
-                event_type="booking.confirmed",
+                event_type="booking.pending",
                 payload={
                     "booking_id": str(booking.id),
                     "ride_id": str(booking.ride_id),
@@ -222,9 +226,19 @@ class BookingService:
             )
 
             db.add(outbox_event)
-
             db.commit()
             
+            # Invalidate Redis cache
+            from app.common.redis import invalidate_rides_cache
+            invalidate_rides_cache()
+            
+            increment("booking_success_total")
+
+            logger.info(
+                "Booking created in PENDING_PAYMENT status",
+                extra={"correlation_id": correlation_id},
+            )
+            return booking
             # 🔥 Invalidate Redis cache after successful booking
             from app.common.redis import invalidate_rides_cache
             invalidate_rides_cache()

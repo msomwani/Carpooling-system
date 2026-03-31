@@ -175,7 +175,7 @@ def get_booking_status(
     """Check if the current user has a confirmed booking for this ride."""
     booking = (
         db.query(Booking)
-        .filter(Booking.ride_id == ride_id, Booking.passenger_id == user_id, Booking.status == "CONFIRMED")
+        .filter(Booking.ride_id == ride_id, Booking.passenger_id == user_id, Booking.status.in_(["PAID_HELD", "CONFIRMED"]))
         .first()
     )
     if booking:

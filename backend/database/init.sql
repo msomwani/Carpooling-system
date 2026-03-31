@@ -13,6 +13,7 @@ CREATE TABLE users (
     phone_number VARCHAR(20),
     phone_verified BOOLEAN NOT NULL DEFAULT FALSE,
     is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    razorpay_account_id VARCHAR(50),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -58,7 +59,10 @@ CREATE TABLE bookings (
     ride_id UUID NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
     passenger_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     seats_booked INTEGER NOT NULL CHECK (seats_booked > 0),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('CONFIRMED', 'CANCELLED')),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING_PAYMENT', 'PAID_HELD', 'CONFIRMED', 'CANCELLED')),
+    razorpay_order_id VARCHAR(100),
+    razorpay_payment_id VARCHAR(100),
+    razorpay_transfer_id VARCHAR(100),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -78,7 +82,7 @@ CREATE INDEX idx_rides_destination_location ON rides USING GIST (destination_loc
 -- This allows multiple CANCELLED bookings but only one CONFIRMED booking per passenger per ride
 CREATE UNIQUE INDEX unique_active_ride_passenger 
 ON bookings (ride_id, passenger_id) 
-WHERE status = 'CONFIRMED';
+WHERE status IN ('PENDING_PAYMENT', 'PAID_HELD', 'CONFIRMED');
 
 -- Prevents duplicate booking requests
 CREATE TABLE booking_idempotency (

@@ -21,6 +21,7 @@ from app.bookings.router import router as booking_router
 from app.analytics.router import router as analytics_router
 from app.auth.router import router as auth_router
 from app.vehicles.router import router as vehicles_router
+from app.payments.router import router as payments_router
 from app.config.settings import settings
 from app.auth.router import limiter
 from slowapi.errors import RateLimitExceeded
@@ -74,6 +75,7 @@ app.include_router(booking_router)
 app.include_router(rides_router)
 app.include_router(analytics_router)
 app.include_router(vehicles_router)
+app.include_router(payments_router)
 
 # Serve static frontend files (maps.html, etc.)
 _static_dir = Path(__file__).resolve().parent / "static"

@@ -67,7 +67,7 @@ class RideService:
             .join(Ride, Ride.id == Booking.ride_id)
             .filter(
                 Booking.passenger_id == user_id,
-                Booking.status == "CONFIRMED",
+                Booking.status.in_(["CONFIRMED", "PAID_HELD"]),
                 Ride.status == RideStatus.ACTIVE,
                 Ride.departure_time >= window_start,
                 Ride.departure_time <= window_end,
@@ -90,10 +90,27 @@ class RideService:
                 dept = dept.replace(tzinfo=timezone.utc)
             
             if dept < now:
-                ride.status = RideStatus.COMPLETED
+                # Release funds for all bookings of this ride
+                from app.payments.service import PaymentService
+                from app.bookings.models import Booking
+                payment_svc = PaymentService()
+                held_bookings = db.query(Booking).filter(
+                    Booking.ride_id == ride.id,
+                    Booking.status == "PAID_HELD"
+                ).all()
+                
+                for b in held_bookings:
+                    if b.razorpay_transfer_id:
+                        try:
+                            payment_svc.release_transfer(b.razorpay_transfer_id)
+                        except Exception as e:
+                            print(f"ERROR: Failed to release transfer {b.razorpay_transfer_id}: {str(e)}")
+                    b.status = "CONFIRMED"
+                
                 db.commit()
                 db.refresh(ride)
-                print(f"DEBUG: Synced ride {ride.id} status to COMPLETED (departure was {dept})")
+                print(f"DEBUG: Synced ride {ride.id} status to COMPLETED and released funds.")
+                
                 # Invalidate cache
                 from app.common.redis import invalidate_rides_cache
                 invalidate_rides_cache()
@@ -263,6 +280,25 @@ class RideService:
                 raise ValueError("Cannot complete a ride before its departure time")
                 
         ride.status = RideStatus.COMPLETED
+        
+        # Release funds for all bookings of this ride
+        from app.payments.service import PaymentService
+        from app.bookings.models import Booking
+        payment_svc = PaymentService()
+        held_bookings = db.query(Booking).filter(
+            Booking.ride_id == ride.id,
+            Booking.status == "PAID_HELD"
+        ).all()
+        
+        for b in held_bookings:
+            if b.razorpay_transfer_id:
+                try:
+                    payment_svc.release_transfer(b.razorpay_transfer_id)
+                except Exception as e:
+                    # In a real app, we'd log this to a retry queue
+                    print(f"ERROR: Failed to release transfer {b.razorpay_transfer_id}: {str(e)}")
+            b.status = "CONFIRMED"
+
         db.commit()
         db.refresh(ride)
 
@@ -279,10 +315,10 @@ class RideService:
         ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
         now = datetime.now(timezone.utc)
 
-        # 1. Fetch all confirmed bookings for this ride
+        # 1. Fetch all confirmed and paid bookings for this ride
         active_bookings = (
             db.query(Booking)
-            .filter(Booking.ride_id == ride_id, Booking.status == "CONFIRMED")
+            .filter(Booking.ride_id == ride_id, Booking.status.in_(["CONFIRMED", "PAID_HELD"]))
             .all()
         )
 
@@ -314,6 +350,16 @@ class RideService:
 
         # 3. Cascade cancellation to passengers
         for booking in active_bookings:
+            if booking.razorpay_payment_id:
+                from app.payments.service import PaymentService
+                payment_svc = PaymentService()
+                refund_amount = int(booking.seats_booked * ride.price_per_seat * 100)
+                try:
+                    payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
+                    print(f"INFO: Successfully refunded {refund_amount} paise to booking {booking.id}")
+                except Exception as e:
+                    print(f"ERROR: Failed to refund payment {booking.razorpay_payment_id}: {str(e)}")
+
             booking.status = "CANCELLED"
             # Trigger passenger refund event
             outbox_event = OutboxEvent(

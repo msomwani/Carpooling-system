@@ -21,4 +21,7 @@ class User(Base):
     # Email verification
     is_email_verified = Column(Boolean, nullable=False, default=False)
 
+    # Razorpay Route integration
+    razorpay_account_id = Column(String(50), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())

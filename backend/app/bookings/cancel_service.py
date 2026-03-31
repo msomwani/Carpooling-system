@@ -53,6 +53,24 @@ class CancellationService:
                 raise ValueError("Cannot cancel booking for a ride that has already departed")
 
         ride.available_seats += booking.seats_booked
+
+        if booking.status in ["PAID_HELD", "CONFIRMED"] and booking.razorpay_payment_id:
+            from app.payments.service import PaymentService
+            payment_svc = PaymentService()
+            refund_amount = int(booking.seats_booked * ride.price_per_seat * 100)
+            try:
+                payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
+                logger.info(
+                    f"Successfully refunded {refund_amount} paise for booking {booking.id}", 
+                    extra={"correlation_id": correlation_id}
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to refund payment {booking.razorpay_payment_id}: {str(e)}", 
+                    extra={"correlation_id": correlation_id}
+                )
+                raise ValueError("Failed to process refund with Razorpay. Please try again later.")
+
         booking.status = "CANCELLED"
 
         # Write compensating event WITH correlation_id

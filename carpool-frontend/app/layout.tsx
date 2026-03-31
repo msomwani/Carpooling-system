@@ -8,6 +8,7 @@ import { AuthProvider } from "@/lib/AuthContext";
 import { RoleProvider } from "@/lib/RoleContext";
 import { BottomNav } from "@/components/BottomNav";
 import { usePathname } from "next/navigation";
+import Script from "next/script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,7 +27,6 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
-  // const isAuthPage = pathname === "/login";
 
   return (
     <html lang="en">
@@ -42,6 +42,7 @@ export default function RootLayout({
             </RoleProvider>
           </AuthProvider>
         </GoogleOAuthProvider>
+        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       </body>
     </html>
   );

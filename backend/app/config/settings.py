@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(validation_alias="JWT_SECRET")
     google_client_id: str = Field(default="", validation_alias="GOOGLE_CLIENT_ID")
     metrics_api_key: str = Field(default="", validation_alias="METRICS_API_KEY")
-
+    razorpay_key_id: str = Field(default="", validation_alias="RAZORPAY_KEY_ID")
+    razorpay_key_secret: str = Field(default="", validation_alias="RAZORPAY_KEY_SECRET")
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",
@@ -52,8 +53,17 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", "cors_allow_methods", "cors_allow_headers", mode="before")
     @classmethod
     def _parse_csv_list(cls, value: Any) -> Any:
+        import json
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            clean_value = value.strip()
+            # Handle JSON array strings like '["http://localhost:3000"]'
+            if clean_value.startswith("[") and clean_value.endswith("]"):
+                try:
+                    return json.loads(clean_value)
+                except json.JSONDecodeError:
+                    pass
+            # Fallback to CSV parsing
+            return [item.strip() for item in clean_value.split(",") if item.strip()]
         return value
 
 

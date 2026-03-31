@@ -82,6 +82,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       REDIS_URL: ${REDIS_URL}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
     command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
       postgres:
@@ -107,6 +109,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       REDIS_URL: ${REDIS_URL}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
     command: ["python", "-m", "app.workers.outbox_processor"]
     depends_on:
       postgres:
@@ -130,6 +134,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       REDIS_URL: ${REDIS_URL}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
     command: ["python", "-m", "app.workers.booking_consumer"]
     depends_on:
       postgres:

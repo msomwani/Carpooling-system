@@ -5,15 +5,15 @@ import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { 
-  Loader2, 
-  MapPin, 
-  Clock, 
-  ChevronLeft, 
-  User, 
-  Car, 
-  Calendar, 
-  Users, 
+import {
+  Loader2,
+  MapPin,
+  Clock,
+  ChevronLeft,
+  User,
+  Car,
+  Calendar,
+  Users,
   Wallet,
   Info
 } from "lucide-react"
@@ -132,20 +132,101 @@ export default function RideDetailsPage() {
         })
       })
 
-      if (response.ok) {
-        // Update local state immediately
-        await Promise.all([
-          fetchDetails(),
-          fetchBookingStatus()
-        ])
-        router.push("/bookings")
-      } else {
+      if (!response.ok) {
         const data = await response.json()
         setBookingError(data.detail || "Booking failed. Please try again.")
+        setIsBooking(false)
+        return
       }
+
+      const bookingData = await response.json()
+      
+      if (!response.ok) {
+        setBookingError(bookingData.detail || "Booking failed. Please try again.")
+        setIsBooking(false)
+        return
+      }
+
+      // Ensure totalAmount is a rounded integer for Razorpay/FastAPI
+      const totalAmount = Math.round(bookingSeats * details!.ride.price_per_seat)
+
+      if (isNaN(totalAmount) || totalAmount <= 0) {
+        setBookingError("Invalid payment amount calculation.")
+        setIsBooking(false)
+        return
+      }
+
+      // Step 2: Create a Razorpay order via our backend
+      const orderResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/payments/create-order`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: totalAmount, booking_id: bookingData.booking_id })
+        }
+      )
+
+      if (!orderResponse.ok) {
+        const errorData = await orderResponse.json()
+        setBookingError(errorData.detail || "Payment initialization failed. Please try again.")
+        setIsBooking(false)
+        return
+      }
+
+      const order = await orderResponse.json()
+
+      // Step 3: Open the Razorpay checkout modal
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: "INR",
+        name: "Croc Ride",
+        description: `${bookingSeats} seat(s) from ${details!.ride.source} to ${details!.ride.destination}`,
+        order_id: order.id,
+        handler: async function (paymentResponse: any) {
+          // Step 4: Verify the payment on the backend after success
+          try {
+            const verifyResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/payments/verify`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: paymentResponse.razorpay_order_id,
+                razorpay_payment_id: paymentResponse.razorpay_payment_id,
+                razorpay_signature: paymentResponse.razorpay_signature,
+                booking_id: bookingData.booking_id
+              })
+            })
+            if (verifyResponse.ok) {
+              await fetchDetails()
+              await fetchBookingStatus()
+              setIsBooking(false)
+            } else {
+              setBookingError("Payment verification failed. Please contact support.")
+              setIsBooking(false)
+            }
+          } catch (error) {
+            console.error("Payment verification error:", error)
+            setBookingError("An error occurred during verification.")
+            setIsBooking(false)
+          }
+        },
+        prefill: {
+          name: user.name,
+          email: user.email,
+        },
+        theme: { color: "#15803d" },
+        modal: {
+          ondismiss: () => {
+            setIsBooking(false)
+          }
+        }
+      }
+
+      const rzp = new (window as any).Razorpay(options)
+      rzp.open()
+
     } catch (err) {
       setBookingError("Connection failed. Check your internet.")
-    } finally {
       setIsBooking(false)
     }
   }
@@ -240,11 +321,11 @@ export default function RideDetailsPage() {
         {/* Map Preview */}
         {ride.source_lat && ride.source_lng && (
           <div className="rounded-3xl overflow-hidden border shadow-sm h-48 relative">
-            <OpenMap 
+            <OpenMap
               pickup={{ lat: ride.source_lat, lng: ride.source_lng }}
               dropoff={ride.destination_lat && ride.destination_lng ? { lat: ride.destination_lat, lng: ride.destination_lng } : undefined}
               route={ride.route_geometry || undefined}
-              zoom={12} 
+              zoom={12}
             />
             <div className="absolute bottom-3 left-3 right-3 bg-background/90 backdrop-blur-sm p-2 rounded-xl border text-[10px] font-bold uppercase tracking-tight text-muted-foreground text-center">
               Routes around Vadodara-Halol Corridor
@@ -350,7 +431,7 @@ export default function RideDetailsPage() {
                 <p className="text-xs text-muted-foreground">You can cancel this ride, but details cannot be changed.</p>
               </div>
             )}
-            <Button 
+            <Button
               variant="destructive"
               className="w-full h-14 rounded-2xl text-lg font-bold shadow-lg shadow-destructive/20 active:scale-[0.98] transition-all"
               disabled={isCancelling || ride.status !== 'ACTIVE'}
@@ -387,18 +468,18 @@ export default function RideDetailsPage() {
                 <div className="flex items-center gap-4">
                   <p className="font-bold text-sm">Seats</p>
                   <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
+                    <Button
+                      variant="outline"
+                      size="icon"
                       className="h-8 w-8 rounded-lg"
                       onClick={() => setBookingSeats(Math.max(1, bookingSeats - 1))}
                     >
                       -
                     </Button>
                     <span className="w-8 text-center font-black text-lg">{bookingSeats}</span>
-                    <Button 
-                      variant="outline" 
-                      size="icon" 
+                    <Button
+                      variant="outline"
+                      size="icon"
                       className="h-8 w-8 rounded-lg"
                       onClick={() => setBookingSeats(Math.min(ride.available_seats, bookingSeats + 1))}
                     >
@@ -418,7 +499,7 @@ export default function RideDetailsPage() {
                 </div>
               )}
 
-              <Button 
+              <Button
                 className="w-full h-14 rounded-2xl text-lg font-bold shadow-lg shadow-green-500/20 bg-[#15803d] hover:bg-[#166534] text-white transition-all active:scale-[0.98]"
                 disabled={isBooking || ride.available_seats < 1 || ride.status !== 'ACTIVE'}
                 onClick={handleBook}
