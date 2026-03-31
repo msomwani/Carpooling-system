@@ -8,9 +8,14 @@ from app.auth.schemas import GoogleAuthRequest
 from app.auth.service import AuthService
 from app.auth.security import create_access_token
 
+from app.config.settings import settings
+
 # Rate limiter: 10 login attempts per minute per IP.
-# In production, swap storage_uri to Redis: "redis://localhost:6379"
-limiter = Limiter(key_func=get_remote_address)
+# In production, uses Redis for distributed storage.
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.redis_url if settings.redis_url else "memory://"
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -43,7 +48,7 @@ def sync_google_user(
         key=_COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,  # Set to True in production (HTTPS only)
+        secure=settings.environment == "production",  # Set to True in production (HTTPS only)
         samesite="lax",
         max_age=_COOKIE_MAX_AGE,
         path="/",

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    environment: str = Field(default="development", validation_alias="ENVIRONMENT")
     database_url: str = Field(validation_alias="DATABASE_URL")
     redis_url: str = Field(validation_alias="REDIS_URL")
     kafka_bootstrap_servers: str = Field(validation_alias="KAFKA_BOOTSTRAP_SERVERS")
@@ -49,6 +50,13 @@ class Settings(BaseSettings):
         ],
         validation_alias="CORS_ALLOW_HEADERS",
     )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _validate_jwt_secret(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 characters long for security.")
+        return v
 
     @field_validator("cors_origins", "cors_allow_methods", "cors_allow_headers", mode="before")
     @classmethod

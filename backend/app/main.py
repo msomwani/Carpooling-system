@@ -44,16 +44,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         # Block embedding in iframes (clickjacking protection)
         response.headers["X-Frame-Options"] = "DENY"
-        # Force HTTPS (enable only when TLS is active in production)
-        # response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        # Content Security Policy — tighten per your frontend needs
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src * data: blob:; "
-            "connect-src *;"
-        )
+        
+        # Force HTTPS in production
+        if settings.environment == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            
+        # Content Security Policy
+        csp_blocks = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            "font-src 'self' https://fonts.gstatic.com",
+            "img-src * data: blob:",  # Allow images from anywhere (maps, avatars)
+            "connect-src 'self' https://accounts.google.com",
+            "frame-ancestors 'none'",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_blocks)
+        
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response

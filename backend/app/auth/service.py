@@ -24,9 +24,14 @@ class AuthService:
                 google_requests.Request(),
                 settings.google_client_id,
             )
+            # Explicitly verify properties for extra security
+            if id_info.get("aud") != settings.google_client_id:
+                raise ValueError("Token audience mismatch")
+            if id_info.get("iss") not in ["accounts.google.com", "https://accounts.google.com"]:
+                raise ValueError("Token issuer mismatch")
         except Exception as exc:
             logger.error(f"Invalid Google token: {exc}")
-            raise ValueError("Invalid Google token")
+            raise ValueError(f"Invalid Google token: {exc}")
 
         email = id_info.get("email")
         name = id_info.get("name", email)
