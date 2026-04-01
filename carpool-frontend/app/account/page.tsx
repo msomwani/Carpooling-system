@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import Link from "next/link"
 import { useAuth } from "@/lib/AuthContext"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useRole } from "@/lib/RoleContext"
+import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,37 +17,88 @@ import {
   Mail,
   Phone,
   Edit2,
-  Check,
   X,
   Award,
   TrendingUp,
   Wallet,
   ShieldCheck,
   Star,
-  Settings,
   ChevronRight,
-  Bell,
-  CreditCard,
   Plus,
   Trash2,
   Car
 } from "lucide-react"
 
+type AnalyticsRole = "passenger" | "driver"
+
+type PassengerAnalytics = {
+  role: "passenger"
+  window: "lifetime"
+  stats: {
+    total_bookings: number
+    cancelled_bookings: number
+    seats_booked: number
+    total_spend_inr: number
+  }
+}
+
+type DriverAnalytics = {
+  role: "driver"
+  window: "lifetime"
+  stats: {
+    rides_created: number
+    rides_completed: number
+    seats_shared: number
+    gross_earnings_inr: number
+  }
+}
+
+type PersonalAnalytics = PassengerAnalytics | DriverAnalytics
+
+type StatCard = {
+  label: string
+  value: string
+  icon: typeof Award
+  color: string
+  bg: string
+}
+
+type ProfileUserFields = {
+  phone_number?: string | null
+  age?: string | number | null
+}
+
+type Vehicle = {
+  id: string
+  make: string
+  model: string
+  color: string
+  license_plate: string
+  type: string
+}
+
 export default function AccountPage() {
   const { user, isLoading, logout, getAuthHeaders } = useAuth()
+  const { role } = useRole()
   const router = useRouter()
 
   const [isEditing, setIsEditing] = useState(false)
   const [profile, setProfile] = useState({
     name: "",
     email: "",
-    phone: "",
-    age: "24" // Default mock age
+        phone: "",
+        age: "24" // Default mock age
   })
 
-  const [vehicles, setVehicles] = useState<any[]>([])
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [isAddingVehicle, setIsAddingVehicle] = useState(false)
-  const [newVehicle, setNewVehicle] = useState({
+  const [newVehicle, setNewVehicle] = useState<{
+    make: string
+    model: string
+    color: string
+    license_plate: string
+    type: "CAR" | "BIKE"
+  }>({
     make: "",
     model: "",
     color: "",
@@ -56,33 +107,179 @@ export default function AccountPage() {
   })
   const [isVehicleLoading, setIsVehicleLoading] = useState(false)
   const [vehicleError, setVehicleError] = useState<string | null>(null)
-
-  // Mock analytics data
-  const stats = [
-    { label: "Completed", value: "12", icon: Award, color: "text-primary", bg: "bg-primary/10" },
-    { label: "Created", value: "5", icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10" },
-    { label: "Earnings", value: "₹1,250", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
-    { label: "Miles", value: "450", icon: Star, color: "text-orange-500", bg: "bg-orange-500/10" }
-  ]
+  const [analytics, setAnalytics] = useState<PersonalAnalytics | null>(null)
+  const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/login")
     } else if (user) {
+      const profileUser = user as typeof user & ProfileUserFields
       setProfile({
-        name: user.name || "",
-        email: user.email || "",
-        phone: (user as any).phone_number || "",
-        age: (user as any).age || "24"
+        name: profileUser.name || "",
+        email: profileUser.email || "",
+        phone: profileUser.phone_number || "",
+        age: profileUser.age ? String(profileUser.age) : "24"
       })
     }
   }, [user, isLoading, router])
 
   useEffect(() => {
-    if (user) {
-      fetchVehicles()
+    if (!user) return
+
+    const fetchVehicles = async () => {
+      try {
+        const response = await fetch("/api/vehicles/me", {
+          headers: getAuthHeaders(),
+          credentials: "include",
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setVehicles(data as Vehicle[])
+        }
+      } catch (error) {
+        console.error("Failed to fetch vehicles:", error)
+      }
     }
-  }, [user])
+
+    fetchVehicles()
+  }, [user, getAuthHeaders])
+
+  useEffect(() => {
+    if (!user) return
+
+    let isActive = true
+
+    const fetchAnalytics = async () => {
+      setIsAnalyticsLoading(true)
+      setAnalyticsError(null)
+      setAnalytics(null)
+
+      try {
+        const response = await fetch(`/api/analytics/me?role=${role}`, {
+          headers: getAuthHeaders(),
+          credentials: "include",
+        })
+
+        if (!isActive) return
+
+        if (response.ok) {
+          const data = await response.json()
+          setAnalytics(data)
+        } else {
+          setAnalyticsError("Could not load your analytics.")
+        }
+      } catch {
+        if (isActive) {
+          setAnalyticsError("Could not load your analytics.")
+        }
+      } finally {
+        if (isActive) {
+          setIsAnalyticsLoading(false)
+        }
+      }
+    }
+
+    fetchAnalytics()
+
+    return () => {
+      isActive = false
+    }
+  }, [user, role, getAuthHeaders])
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(amount)
+
+  const getAnalyticsCards = (activeRole: AnalyticsRole, data: PersonalAnalytics | null): StatCard[] => {
+    if (!data) {
+      if (activeRole === "driver") {
+        return [
+          { label: "Rides Created", value: "...", icon: TrendingUp, color: "text-blue-500", bg: "bg-blue-500/10" },
+          { label: "Rides Completed", value: "...", icon: Award, color: "text-primary", bg: "bg-primary/10" },
+          { label: "Seats Shared", value: "...", icon: Star, color: "text-orange-500", bg: "bg-orange-500/10" },
+          { label: "Gross Earnings", value: "...", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
+        ]
+      }
+
+      return [
+        { label: "Bookings", value: "...", icon: Award, color: "text-primary", bg: "bg-primary/10" },
+        { label: "Cancelled", value: "...", icon: X, color: "text-red-500", bg: "bg-red-500/10" },
+        { label: "Seats Booked", value: "...", icon: Star, color: "text-orange-500", bg: "bg-orange-500/10" },
+        { label: "Total Spend", value: "...", icon: Wallet, color: "text-green-500", bg: "bg-green-500/10" },
+      ]
+    }
+
+    if (data.role === "driver") {
+      return [
+        {
+          label: "Rides Created",
+          value: String(data.stats.rides_created),
+          icon: TrendingUp,
+          color: "text-blue-500",
+          bg: "bg-blue-500/10",
+        },
+        {
+          label: "Rides Completed",
+          value: String(data.stats.rides_completed),
+          icon: Award,
+          color: "text-primary",
+          bg: "bg-primary/10",
+        },
+        {
+          label: "Seats Shared",
+          value: String(data.stats.seats_shared),
+          icon: Star,
+          color: "text-orange-500",
+          bg: "bg-orange-500/10",
+        },
+        {
+          label: "Gross Earnings",
+          value: formatCurrency(data.stats.gross_earnings_inr),
+          icon: Wallet,
+          color: "text-green-500",
+          bg: "bg-green-500/10",
+        },
+      ]
+    }
+
+    return [
+      {
+        label: "Bookings",
+        value: String(data.stats.total_bookings),
+        icon: Award,
+        color: "text-primary",
+        bg: "bg-primary/10",
+      },
+      {
+        label: "Cancelled",
+        value: String(data.stats.cancelled_bookings),
+        icon: X,
+        color: "text-red-500",
+        bg: "bg-red-500/10",
+      },
+      {
+        label: "Seats Booked",
+        value: String(data.stats.seats_booked),
+        icon: Star,
+        color: "text-orange-500",
+        bg: "bg-orange-500/10",
+      },
+      {
+        label: "Total Spend",
+        value: formatCurrency(data.stats.total_spend_inr),
+        icon: Wallet,
+        color: "text-green-500",
+        bg: "bg-green-500/10",
+      },
+    ]
+  }
+
+  const stats = getAnalyticsCards(role, analytics)
 
   if (isLoading || !user) {
     return (
@@ -98,21 +295,6 @@ export default function AccountPage() {
   const handleSave = () => {
     console.log("Profile update requested:", profile)
     setIsEditing(false)
-  }
-
-  const fetchVehicles = async () => {
-    try {
-      const response = await fetch("/api/vehicles/me", {
-        headers: getAuthHeaders(),
-        credentials: "include",
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setVehicles(data)
-      }
-    } catch (error) {
-      console.error("Failed to fetch vehicles:", error)
-    }
   }
 
   const validateLicensePlate = (plate: string) => {
@@ -202,6 +384,11 @@ export default function AccountPage() {
             <h2 className="text-xl font-black tracking-tight">Analytics</h2>
             <p className="text-muted-foreground text-xs font-medium">Your performance and impact at a glance</p>
           </div>
+          {analyticsError ? (
+            <Card className="rounded-[2rem] border border-destructive/20 bg-destructive/5 p-5">
+              <p className="text-sm font-bold text-destructive">{analyticsError}</p>
+            </Card>
+          ) : (
           <div className="grid grid-cols-2 gap-4">
             {stats.map((stat, i) => (
               <Card key={i} className="rounded-3xl border-none shadow-sm bg-background p-5 hover:shadow-md transition-shadow">
@@ -211,12 +398,18 @@ export default function AccountPage() {
                   </div>
                   <div>
                     <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-1">{stat.label}</p>
-                    <p className={`text-xl font-black ${stat.color} tracking-tighter`}>{stat.value}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`text-xl font-black ${stat.color} tracking-tighter`}>{stat.value}</p>
+                      {isAnalyticsLoading && (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
                   </div>
                 </div>
               </Card>
             ))}
           </div>
+          )}
         </section>
 
         {/* Section 2: Personal Details */}
@@ -360,7 +553,7 @@ export default function AccountPage() {
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Vehicle Type</Label>
                   <div className="flex gap-4">
-                    {["CAR", "BIKE"].map((type) => (
+                    {(["CAR", "BIKE"] as const).map((type) => (
                       <button
                         key={type}
                         type="button"
