@@ -24,7 +24,7 @@ class TestBookingFlow:
             correlation_id="flow-corr-1"
         )
         
-        assert booking.status == "CONFIRMED"
+        assert booking.status == "PENDING_PAYMENT"
         assert booking.seats_booked == 2
         
         # Verify seat deduction
@@ -32,10 +32,10 @@ class TestBookingFlow:
         assert sample_ride.available_seats == 2  # Started with 4
         
         # Verify outbox event created
-        confirmed_events = db.query(OutboxEvent).filter(
-            OutboxEvent.event_type == "booking.confirmed"
+        pending_events = db.query(OutboxEvent).filter(
+            OutboxEvent.event_type == "booking.pending"
         ).count()
-        assert confirmed_events >= 1
+        assert pending_events >= 1
         
         # Step 2: Cancel the booking
         cancelled_booking = CancellationService.cancel_booking(
@@ -69,7 +69,7 @@ class TestBookingFlow:
             correlation_id="rebook-corr-1"
         )
         
-        assert booking1.status == "CONFIRMED"
+        assert booking1.status == "PENDING_PAYMENT"
         db.refresh(sample_ride)
         assert sample_ride.available_seats == 3
         
@@ -98,7 +98,7 @@ class TestBookingFlow:
         
         # Should reactivate the same booking record
         assert booking2.id == booking1.id
-        assert booking2.status == "CONFIRMED"
+        assert booking2.status == "PENDING_PAYMENT"
         assert booking2.seats_booked == 2
         
         db.refresh(sample_ride)
@@ -138,7 +138,7 @@ class TestBookingFlow:
         # Verify all bookings successful
         assert len(bookings) == 3
         for booking in bookings:
-            assert booking.status == "CONFIRMED"
+            assert booking.status == "PENDING_PAYMENT"
         
         # Verify correct seat deduction
         db.refresh(sample_ride)
@@ -222,7 +222,7 @@ class TestBookingFlow:
         
         # Check outbox event has correlation ID
         events = db.query(OutboxEvent).filter(
-            OutboxEvent.event_type == "booking.confirmed"
+            OutboxEvent.event_type == "booking.pending"
         ).all()
         
         # Find the event for this booking

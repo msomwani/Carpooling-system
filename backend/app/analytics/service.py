@@ -1,75 +1,53 @@
-from datetime import datetime, timedelta, UTC
-from sqlalchemy import case, func
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.orm import Session
 
 from app.bookings.models import Booking
 from app.rides.models import Ride, RideStatus
+from app.rides.service import RideService
+
 
 class AnalyticsService:
-
     @staticmethod
     def get_overview(db: Session, *, days: int = 30):
         start_time = datetime.now(UTC) - timedelta(days=days)
 
-        total_bookings = (
-            db.query(func.count(Booking.id))
-            .filter(Booking.created_at >= start_time)
-            .scalar()
-        ) or 0
+        bookings = db.query(Booking).filter(Booking.created_at >= start_time).all()
+        rides = db.query(Ride).filter(Ride.departure_time >= start_time).all()
+        ride_map = {ride.id: ride for ride in rides}
 
-        cancelled_bookings = (
-            db.query(func.count(Booking.id))
-            .filter(
-                Booking.created_at >= start_time,
-                Booking.status == "CANCELLED",
-            )
-            .scalar()
-        ) or 0
-
+        total_bookings = len(bookings)
+        cancelled_bookings = sum(1 for booking in bookings if booking.status == "CANCELLED")
         cancellation_rate = (cancelled_bookings / total_bookings) if total_bookings else 0.0
 
-        total_seats = (
-            db.query(func.coalesce(func.sum(Ride.total_seats), 0))
-            .filter(Ride.departure_time >= start_time)
-            .scalar()
-        ) or 0
-
-        booked_seats = (
-            db.query(func.coalesce(func.sum(Booking.seats_booked), 0))
-            .join(Ride, Ride.id == Booking.ride_id)
-            .filter(
-                Ride.departure_time >= start_time,
-                Booking.status == "CONFIRMED",
-            )
-            .scalar()
-        ) or 0
-
+        utilization_rides = [ride for ride in rides if ride.status in [RideStatus.STARTED, RideStatus.COMPLETED]]
+        total_seats = sum(ride.total_seats for ride in utilization_rides)
+        booked_seats = sum(
+            booking.boarded_seats
+            for booking in bookings
+            if booking.status == "CONFIRMED"
+            and booking.ride_id in ride_map
+            and ride_map[booking.ride_id].status in [RideStatus.STARTED, RideStatus.COMPLETED]
+        )
         seat_utilization = (booked_seats / total_seats) if total_seats else 0.0
 
-        route_rows = (
-            db.query(
-                Ride.source.label("source"),
-                Ride.destination.label("destination"),
-                func.count(Booking.id).label("bookings"),
-            )
-            .join(Booking, Booking.ride_id == Ride.id)
-            .filter(
-                Booking.status == "CONFIRMED",
-                Ride.departure_time >= start_time,
-            )
-            .group_by(Ride.source, Ride.destination)
-            .order_by(func.count(Booking.id).desc())
-            .limit(5)
-            .all()
-        )
+        route_totals: dict[tuple[str, str], int] = {}
+        for booking in bookings:
+            if booking.status != "CONFIRMED":
+                continue
+            ride = ride_map.get(booking.ride_id)
+            if not ride:
+                continue
+            key = (ride.source, ride.destination)
+            route_totals[key] = route_totals.get(key, 0) + booking.boarded_seats
 
         popular_routes = [
-            {
-                "source": row.source,
-                "destination": row.destination,
-                "bookings": int(row.bookings),
-            }
-            for row in route_rows
+            {"source": source, "destination": destination, "bookings": count}
+            for (source, destination), count in sorted(
+                route_totals.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:5]
         ]
 
         return {
@@ -88,145 +66,67 @@ class AnalyticsService:
 
     @staticmethod
     def _get_passenger_analytics(db: Session, *, user_id: str):
-        active_statuses = ["CONFIRMED", "PAID_HELD"]
-
-        stats_row = (
-            db.query(
-                func.coalesce(
-                    func.sum(case((Booking.status.in_(active_statuses), 1), else_=0)),
-                    0,
-                ).label("total_bookings"),
-                func.coalesce(
-                    func.sum(case((Booking.status == "CANCELLED", 1), else_=0)),
-                    0,
-                ).label("cancelled_bookings"),
-                func.coalesce(
-                    func.sum(
-                        case((Booking.status.in_(active_statuses), Booking.seats_booked), else_=0)
-                    ),
-                    0,
-                ).label("seats_booked"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                Booking.status.in_(active_statuses),
-                                Booking.seats_booked * Ride.price_per_seat,
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("total_spend_inr"),
-            )
+        bookings = (
+            db.query(Booking, Ride)
             .join(Ride, Ride.id == Booking.ride_id)
-            .filter(
-                Booking.passenger_id == user_id,
-            )
-            .one()
+            .filter(Booking.passenger_id == user_id)
+            .all()
         )
+
+        total_bookings = 0
+        cancelled_bookings = 0
+        seats_booked = 0
+        total_spend_inr = 0
+
+        for booking, ride in bookings:
+            RideService.reconcile_overdue_ride(db, ride)
+            db.refresh(booking)
+            db.refresh(ride)
+
+            if booking.status in ["PAID_HELD", "CONFIRMED"]:
+                total_bookings += 1
+            if booking.status in ["CANCELLED", "REFUNDED"]:
+                cancelled_bookings += 1
+
+            if booking.status == "CONFIRMED":
+                seats_booked += booking.boarded_seats
+                total_spend_inr += int((booking.settled_amount_paise or 0) / 100)
+            elif booking.status == "PAID_HELD":
+                seats_booked += booking.seats_booked
+                total_spend_inr += booking.seats_booked * ride.price_per_seat
 
         return {
             "role": "passenger",
             "window": "lifetime",
             "stats": {
-                "total_bookings": int(stats_row.total_bookings or 0),
-                "cancelled_bookings": int(stats_row.cancelled_bookings or 0),
-                "seats_booked": int(stats_row.seats_booked or 0),
-                "total_spend_inr": int(stats_row.total_spend_inr or 0),
+                "total_bookings": total_bookings,
+                "cancelled_bookings": cancelled_bookings,
+                "seats_booked": seats_booked,
+                "total_spend_inr": total_spend_inr,
             },
         }
 
     @staticmethod
     def _get_driver_analytics(db: Session, *, user_id: str):
-        AnalyticsService._sync_overdue_driver_rides(db, user_id=user_id)
+        rides = db.query(Ride).filter(Ride.driver_id == user_id).all()
+        for ride in rides:
+            RideService.reconcile_overdue_ride(db, ride)
+            db.refresh(ride)
 
-        active_booking_statuses = ["CONFIRMED", "PAID_HELD"]
+        ride_ids = [ride.id for ride in rides]
+        bookings = db.query(Booking).filter(Booking.ride_id.in_(ride_ids)).all() if ride_ids else []
 
-        stats_row = (
-            db.query(
-                func.count(func.distinct(Ride.id)).label("rides_created"),
-                func.count(
-                    func.distinct(
-                        case((Ride.status == RideStatus.COMPLETED, Ride.id), else_=None)
-                    )
-                ).label("rides_completed"),
-                func.coalesce(
-                    func.sum(
-                        case((Booking.status.in_(active_booking_statuses), Booking.seats_booked), else_=0)
-                    ),
-                    0,
-                ).label("seats_shared"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (
-                                Booking.status.in_(active_booking_statuses),
-                                Booking.seats_booked * Ride.price_per_seat,
-                            ),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("gross_earnings_inr"),
-            )
-            .outerjoin(Booking, Booking.ride_id == Ride.id)
-            .filter(Ride.driver_id == user_id)
-            .one()
-        )
+        rides_completed = sum(1 for ride in rides if ride.status == RideStatus.COMPLETED)
+        seats_shared = sum(booking.boarded_seats for booking in bookings if booking.status == "CONFIRMED")
+        gross_earnings_inr = sum(int((booking.settled_amount_paise or 0) / 100) for booking in bookings if booking.status == "CONFIRMED")
 
         return {
             "role": "driver",
             "window": "lifetime",
             "stats": {
-                "rides_created": int(stats_row.rides_created or 0),
-                "rides_completed": int(stats_row.rides_completed or 0),
-                "seats_shared": int(stats_row.seats_shared or 0),
-                "gross_earnings_inr": int(stats_row.gross_earnings_inr or 0),
+                "rides_created": len(rides),
+                "rides_completed": rides_completed,
+                "seats_shared": seats_shared,
+                "gross_earnings_inr": gross_earnings_inr,
             },
         }
-
-    @staticmethod
-    def _sync_overdue_driver_rides(db: Session, *, user_id: str):
-        from app.common.redis import invalidate_rides_cache
-        from app.payments.service import PaymentService
-
-        now = datetime.now(UTC)
-        overdue_rides = (
-            db.query(Ride)
-            .filter(
-                Ride.driver_id == user_id,
-                Ride.status == RideStatus.ACTIVE,
-                Ride.departure_time < now,
-            )
-            .all()
-        )
-
-        if not overdue_rides:
-            return
-
-        overdue_ride_ids = [ride.id for ride in overdue_rides]
-        held_bookings = (
-            db.query(Booking)
-            .filter(
-                Booking.ride_id.in_(overdue_ride_ids),
-                Booking.status == "PAID_HELD",
-            )
-            .all()
-        )
-
-        payment_svc = PaymentService() if held_bookings else None
-
-        for booking in held_bookings:
-            if booking.razorpay_transfer_id and payment_svc is not None:
-                try:
-                    payment_svc.release_transfer(booking.razorpay_transfer_id)
-                except Exception as e:
-                    print(f"ERROR: Failed to release transfer {booking.razorpay_transfer_id}: {str(e)}")
-            booking.status = "CONFIRMED"
-
-        for ride in overdue_rides:
-            ride.status = RideStatus.COMPLETED
-
-        db.commit()
-        invalidate_rides_cache()

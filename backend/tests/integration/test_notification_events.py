@@ -31,7 +31,7 @@ class TestNotificationEvents:
         assert event.payload["ride_id"] == str(ride.id)
         assert event.payload["driver_id"] == str(sample_driver.id)
 
-    def test_booking_confirmed_event(self, db, sample_ride, sample_passenger):
+    def test_booking_pending_event(self, db, sample_ride, sample_passenger):
         BookingService.create_booking(
             db=db,
             ride_id=sample_ride.id,
@@ -42,7 +42,7 @@ class TestNotificationEvents:
         )
 
         event = db.query(OutboxEvent).filter(
-            OutboxEvent.event_type == "booking.confirmed"
+            OutboxEvent.event_type == "booking.pending"
         ).first()
 
         assert event is not None
@@ -91,7 +91,7 @@ class TestNotificationEvents:
             correlation_id="notif-corr-5"
         )
 
-        # 3. Verify driver cancellation event (no refund as creation is free)
+        # 3. Verify driver cancellation event
         driver_event = db.query(OutboxEvent).filter(
             OutboxEvent.event_type == "ride.cancelled"
         ).first()

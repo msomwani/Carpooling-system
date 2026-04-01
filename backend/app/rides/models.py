@@ -1,17 +1,25 @@
 import uuid
+import enum
+
 from sqlalchemy import Column, String, DateTime, Integer, Float, ForeignKey, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from geoalchemy2 import Geography
-import enum
 
 from app.common.db import Base
 
 
 class RideStatus(str, enum.Enum):
-    ACTIVE = "ACTIVE"
+    SCHEDULED = "SCHEDULED"
+    STARTED = "STARTED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+    MISSED_START = "MISSED_START"
+
+
+class RideCompletionSource(str, enum.Enum):
+    DRIVER = "DRIVER"
+    SYSTEM = "SYSTEM"
 
 
 class Ride(Base):
@@ -39,9 +47,16 @@ class Ride(Base):
     status = Column(
         SAEnum(RideStatus, name="ridestatus"),
         nullable=False,
-        default=RideStatus.ACTIVE,
-        server_default=RideStatus.ACTIVE.value,
+        default=RideStatus.SCHEDULED,
+        server_default=RideStatus.SCHEDULED.value,
     )
+    actual_started_at = Column(DateTime(timezone=True), nullable=True)
+    actual_completed_at = Column(DateTime(timezone=True), nullable=True)
+    actual_start_lat = Column(Float, nullable=True)
+    actual_start_lng = Column(Float, nullable=True)
+    actual_complete_lat = Column(Float, nullable=True)
+    actual_complete_lng = Column(Float, nullable=True)
+    completed_by = Column(SAEnum(RideCompletionSource, name="ridecompletionsource"), nullable=True)
     price_per_seat = Column(Integer, nullable=False, default=0)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

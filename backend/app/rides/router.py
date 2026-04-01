@@ -2,9 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.common.db import get_db
-from app.rides.schemas import RideCreateRequest, RideResponse, RideDetailResponse
+from app.rides.schemas import (
+    RideCreateRequest,
+    RideResponse,
+    RideDetailResponse,
+    RideLocationRequest,
+    RideManifestBookingResponse,
+)
 from app.rides.service import RideService
-from app.rides.models import RideStatus
 from app.auth.dependencies import get_current_user_id
 
 
@@ -40,18 +45,49 @@ def create_ride(
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
-
+@router.post("/{ride_id}/start", response_model=RideResponse)
+def start_ride(
+    ride_id: str,
+    payload: RideLocationRequest,
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    try:
+        correlation_id = request.state.correlation_id if hasattr(request.state, "correlation_id") else None
+        ride = RideService.start_ride(
+            db,
+            ride_id=ride_id,
+            driver_id=user_id,
+            lat=payload.lat,
+            lng=payload.lng,
+            correlation_id=correlation_id,
+        )
+        return ride
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/{ride_id}/complete", response_model=RideResponse)
 def complete_ride(
     ride_id: str,
+    payload: RideLocationRequest,
+    request: Request,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Mark a ride as COMPLETED. Only the owning driver can call this."""
     try:
-        ride = RideService.complete_ride(db, ride_id=ride_id, driver_id=user_id)
+        correlation_id = request.state.correlation_id if hasattr(request.state, "correlation_id") else None
+        ride = RideService.complete_ride(
+            db,
+            ride_id=ride_id,
+            driver_id=user_id,
+            lat=payload.lat,
+            lng=payload.lng,
+            correlation_id=correlation_id,
+        )
         return ride
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
@@ -83,6 +119,20 @@ def cancel_ride(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/{ride_id}/manifest", response_model=list[RideManifestBookingResponse])
+def get_ride_manifest(
+    ride_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    try:
+        return RideService.get_ride_manifest(db, ride_id=ride_id, driver_id=user_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/nearby", response_model=list[RideResponse])
 def search_rides_nearby(
     lat: float = Query(..., ge=-90, le=90),
@@ -92,7 +142,7 @@ def search_rides_nearby(
     db: Session = Depends(get_db),
 ):
     """
-    Find ACTIVE rides within *radius_km* of (lat, lng).
+    Find scheduled rides within *radius_km* of (lat, lng).
 
     - **role=source** (default): rides starting near the point.
     - **role=destination**: rides ending near the point.

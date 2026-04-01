@@ -13,6 +13,10 @@ class BookingResponse(BaseModel):
     status: str
 
 
+class BookingBoardRequest(BaseModel):
+    boarded_seats: int = Field(gt=0)
+
+
 class BookingHistoryResponse(BaseModel):
     event_id: UUID
     booking_id: UUID
@@ -29,11 +33,24 @@ class MyBookingResponse(BaseModel):
     destination: str
     departure_time: datetime
     seats_booked: int
+    boarded_seats: int
     price_per_seat: int
     status: str
+    trip_status: str
+    ride_status: str
+    passenger_ready_at: datetime | None = None
+    passenger_boarding_confirmed_at: datetime | None = None
     created_at: datetime
+
 
 class BookingStatusResponse(BaseModel):
     has_booking: bool
     booking_id: UUID | None = None
     status: str | None = None
+    trip_status: str | None = None
+    boarded_seats: int = 0
+    passenger_ready_at: datetime | None = None
+    passenger_boarding_confirmed_at: datetime | None = None
+    can_mark_ready: bool = False
+    can_confirm_boarding: bool = False
+    can_cancel: bool = False

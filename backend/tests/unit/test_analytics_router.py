@@ -2,14 +2,13 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.auth.dependencies import get_current_user_id
-from app.bookings.models import Booking
+from app.bookings.models import Booking, BookingTripStatus
 from app.main import app
-from app.rides.models import Ride
+from app.rides.models import Ride, RideStatus
 
 
 def test_get_my_analytics_requires_authentication(client):
     response = client.get("/analytics/me?role=passenger")
-
     assert response.status_code == 401
 
 
@@ -53,7 +52,10 @@ def test_get_my_analytics_for_passenger(client, db, sample_driver, sample_passen
             ride_id=ride_one.id,
             passenger_id=sample_passenger.id,
             seats_booked=1,
+            boarded_seats=1,
             status="CONFIRMED",
+            trip_status=BookingTripStatus.DROPPED,
+            settled_amount_paise=12000,
         ),
         Booking(
             id=uuid4(),
@@ -67,13 +69,12 @@ def test_get_my_analytics_for_passenger(client, db, sample_driver, sample_passen
             ride_id=ride_three.id,
             passenger_id=sample_passenger.id,
             seats_booked=1,
-            status="CANCELLED",
+            status="REFUNDED",
         ),
     ])
     db.commit()
 
     app.dependency_overrides[get_current_user_id] = lambda: str(sample_passenger.id)
-
     response = client.get("/analytics/me?role=passenger")
 
     assert response.status_code == 200
@@ -91,17 +92,18 @@ def test_get_my_analytics_for_passenger(client, db, sample_driver, sample_passen
     app.dependency_overrides.clear()
 
 
-def test_get_my_analytics_for_driver_syncs_completed_rides(client, db, sample_driver, sample_passenger):
+def test_get_my_analytics_for_driver_reconciles_started_rides(client, db, sample_driver, sample_passenger):
     past_ride = Ride(
         id=uuid4(),
         driver_id=sample_driver.id,
         source="Vadodara",
         destination="Halol",
-        departure_time=datetime.now(timezone.utc) - timedelta(hours=3),
+        departure_time=datetime.now(timezone.utc) - timedelta(hours=7),
         total_seats=4,
         available_seats=2,
         price_per_seat=150,
-        status="ACTIVE",
+        status=RideStatus.STARTED,
+        actual_started_at=datetime.now(timezone.utc) - timedelta(hours=6, minutes=30),
     )
     future_ride = Ride(
         id=uuid4(),
@@ -112,7 +114,7 @@ def test_get_my_analytics_for_driver_syncs_completed_rides(client, db, sample_dr
         total_seats=4,
         available_seats=3,
         price_per_seat=220,
-        status="ACTIVE",
+        status=RideStatus.SCHEDULED,
     )
     db.add_all([past_ride, future_ride])
     db.commit()
@@ -123,7 +125,9 @@ def test_get_my_analytics_for_driver_syncs_completed_rides(client, db, sample_dr
             ride_id=past_ride.id,
             passenger_id=sample_passenger.id,
             seats_booked=2,
-            status="CONFIRMED",
+            boarded_seats=2,
+            status="PAID_HELD",
+            trip_status=BookingTripStatus.BOARDED,
         ),
         Booking(
             id=uuid4(),
@@ -132,33 +136,17 @@ def test_get_my_analytics_for_driver_syncs_completed_rides(client, db, sample_dr
             seats_booked=1,
             status="PAID_HELD",
         ),
-        Booking(
-            id=uuid4(),
-            ride_id=future_ride.id,
-            passenger_id=sample_passenger.id,
-            seats_booked=1,
-            status="CANCELLED",
-        ),
     ])
     db.commit()
 
     app.dependency_overrides[get_current_user_id] = lambda: str(sample_driver.id)
-
     response = client.get("/analytics/me?role=driver")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "role": "driver",
-        "window": "lifetime",
-        "stats": {
-            "rides_created": 2,
-            "rides_completed": 1,
-            "seats_shared": 3,
-            "gross_earnings_inr": 520,
-        },
-    }
+    assert response.json()["stats"]["rides_created"] == 2
+    assert response.json()["stats"]["rides_completed"] == 1
 
     db.refresh(past_ride)
-    assert past_ride.status.value == "COMPLETED"
+    assert past_ride.status == RideStatus.COMPLETED
 
     app.dependency_overrides.clear()

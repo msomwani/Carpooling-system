@@ -18,7 +18,14 @@ class PaymentService:
         return self.client.order.create(data=data)
 
 
-    def create_transfer(self, payment_id: str, account_id: str, amount_in_paise: int):
+    def create_transfer(
+        self,
+        payment_id: str,
+        account_id: str,
+        amount_in_paise: int,
+        *,
+        on_hold: bool = True,
+    ):
         """
         Creates a transfer to a linked account with 'on_hold' set to True.
         Used for Escrow/Marketplace model.
@@ -32,7 +39,7 @@ class PaymentService:
                     "notes": {
                         "payment_id": payment_id
                     },
-                    "on_hold": 1 # 1 means True in Razorpay API for this field
+                    "on_hold": on_hold,
                 }
             ]
         }

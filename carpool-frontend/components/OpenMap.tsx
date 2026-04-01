@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useEffect, useRef, useState } from "react"
@@ -18,7 +17,7 @@ const parseWKT = (wkt: string): [number, number][] => {
   if (!wkt) return []
   const cleanWkt = wkt.trim().toUpperCase()
   if (!cleanWkt.includes("LINESTRING")) return []
-  
+
   try {
     const coordsStr = wkt.substring(wkt.indexOf("(") + 1, wkt.lastIndexOf(")"))
     return coordsStr.split(",").map(pair => {
@@ -34,8 +33,8 @@ const parseWKT = (wkt: string): [number, number][] => {
   }
 }
 
-export function OpenMap({ 
-  center = { lat: 22.3072, lng: 73.1812 }, 
+export function OpenMap({
+  center = { lat: 22.3072, lng: 73.1812 },
   zoom = 12,
   pickup,
   dropoff,
@@ -48,7 +47,7 @@ export function OpenMap({
   useEffect(() => {
     // Initialize map only once
     if (typeof window !== "undefined" && mapRef.current && !mapInstanceRef.current) {
-      console.log("DEBUG: Initializing Leaflet map");
+      // console.log("DEBUG: Initializing Leaflet map");
       const map = L.map(mapRef.current, {
         zoomControl: false,
       }).setView([center.lat, center.lng], zoom)
@@ -58,13 +57,15 @@ export function OpenMap({
         maxZoom: 19,
       }).addTo(map)
 
+      map.whenReady(() => {
+        setIsLoading(false)
+      })
       mapInstanceRef.current = map
-      setIsLoading(false)
     }
 
     return () => {
       if (mapInstanceRef.current) {
-        console.log("DEBUG: Removing Leaflet map");
+        // console.log("DEBUG: Removing Leaflet map");
         mapInstanceRef.current.remove()
         mapInstanceRef.current = null
       }
@@ -86,7 +87,7 @@ export function OpenMap({
     });
 
     const markers: L.Marker[] = []
-    
+
     if (pickup) {
       const pickupIcon = L.divIcon({
         className: 'custom-div-icon',

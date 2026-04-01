@@ -21,7 +21,18 @@ conf = {
 }
 
 consumer = Consumer(conf)
-consumer.subscribe(["booking.confirmed", "booking.cancelled"])
+consumer.subscribe(
+    [
+        "booking.confirmed",
+        "booking.cancelled",
+        "booking.cancelled_by_driver",
+        "booking.ready_at_pickup",
+        "booking.boarded",
+        "booking.boarding_confirmed",
+        "booking.settled",
+        "booking.refunded",
+    ]
+)
 
 print("Booking consumer started...")
 
@@ -52,7 +63,17 @@ def _record_booking_history(db, topic: str, event: dict, payload: dict):
     if not booking_id or not ride_id or not passenger_id:
         return
 
-    action = "BOOKING_CONFIRMED" if topic == "booking.confirmed" else "BOOKING_CANCELLED"
+    action_map = {
+        "booking.confirmed": "BOOKING_CONFIRMED",
+        "booking.cancelled": "BOOKING_CANCELLED",
+        "booking.cancelled_by_driver": "BOOKING_CANCELLED_BY_DRIVER",
+        "booking.ready_at_pickup": "READY_AT_PICKUP",
+        "booking.boarded": "BOARDED",
+        "booking.boarding_confirmed": "BOARDING_CONFIRMED",
+        "booking.settled": "BOOKING_SETTLED",
+        "booking.refunded": "BOOKING_REFUNDED",
+    }
+    action = action_map.get(topic, topic.upper())
     occurred_at_raw = event.get("occurred_at")
     try:
         occurred_at = datetime.fromisoformat(occurred_at_raw) if occurred_at_raw else datetime.now(UTC)
@@ -70,6 +91,10 @@ def _record_booking_history(db, topic: str, event: dict, payload: dict):
         details={
             "seats_booked": payload.get("seats_booked"),
             "seats_returned": payload.get("seats_returned"),
+            "boarded_seats": payload.get("boarded_seats"),
+            "reason": payload.get("reason"),
+            "settled_amount_paise": payload.get("settled_amount_paise"),
+            "refunded_amount_paise": payload.get("refunded_amount_paise"),
         },
     )
     db.add(history)

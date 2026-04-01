@@ -36,7 +36,7 @@ def test_nearby_path_search_api(client, sample_driver, db):
         departure_time=datetime.now(timezone.utc) + timedelta(hours=5),
         total_seats=4,
         available_seats=4,
-        status=RideStatus.ACTIVE,
+        status=RideStatus.SCHEDULED,
         route_geometry=route_wkt,
         price_per_seat=150
     )
@@ -75,7 +75,7 @@ def test_nearby_path_search_api_no_match(client, sample_driver, db):
         departure_time=datetime.now(timezone.utc) + timedelta(hours=5),
         total_seats=4,
         available_seats=4,
-        status=RideStatus.ACTIVE,
+        status=RideStatus.SCHEDULED,
         route_geometry=route_wkt,
         price_per_seat=150
     )

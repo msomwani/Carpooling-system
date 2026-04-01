@@ -1,6 +1,6 @@
 from datetime import datetime
-from uuid import UUID
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
@@ -46,7 +46,14 @@ class RideResponse(BaseModel):
     total_seats: int
     available_seats: int
     price_per_seat: int
-    status: Literal["ACTIVE", "COMPLETED", "CANCELLED"] = "ACTIVE"
+    status: Literal["SCHEDULED", "STARTED", "COMPLETED", "CANCELLED", "MISSED_START"] = "SCHEDULED"
+    actual_started_at: datetime | None = None
+    actual_completed_at: datetime | None = None
+    actual_start_lat: float | None = None
+    actual_start_lng: float | None = None
+    actual_complete_lat: float | None = None
+    actual_complete_lng: float | None = None
+    completed_by: Literal["DRIVER", "SYSTEM"] | None = None
     vehicle_id: UUID | None = None
     route_geometry: str | None = None
 
@@ -81,3 +88,19 @@ class RideDetailResponse(BaseModel):
     vehicle_model: str | None = None
     vehicle_color: str | None = None
     vehicle_license_plate: str | None = None
+
+
+class RideLocationRequest(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+
+
+class RideManifestBookingResponse(BaseModel):
+    booking_id: UUID
+    passenger_name: str
+    seats_booked: int
+    boarded_seats: int
+    trip_status: Literal["BOOKED", "READY_AT_PICKUP", "BOARDED", "DROPPED", "NO_SHOW"]
+    passenger_ready_at: datetime | None = None
+    passenger_boarding_confirmed_at: datetime | None = None
+    payment_status: str

@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session
 from app.common.db import get_db
 from app.bookings.service import BookingService
 from app.bookings.schemas import (
-    BookingCreateRequest, 
-    BookingResponse, 
+    BookingBoardRequest,
+    BookingCreateRequest,
+    BookingResponse,
     BookingHistoryResponse,
     MyBookingResponse,
-    BookingStatusResponse
+    BookingStatusResponse,
 )
 from app.auth.dependencies import get_current_user_id
 from app.bookings.cancel_service import CancellationService
@@ -38,9 +39,10 @@ def get_my_bookings(
         .all()
     )
     
-    # Sync ride status for all active rides in the results
-    for _, ride in results:
-        RideService.sync_ride_status(db, ride)
+    for booking, ride in results:
+        RideService.reconcile_overdue_ride(db, ride)
+        db.refresh(booking)
+        db.refresh(ride)
 
     return [
         MyBookingResponse(
@@ -50,8 +52,13 @@ def get_my_bookings(
             destination=ride.destination,
             departure_time=ride.departure_time,
             seats_booked=booking.seats_booked,
+            boarded_seats=booking.boarded_seats,
             price_per_seat=ride.price_per_seat,
             status=booking.status,
+            trip_status=booking.trip_status.value,
+            ride_status=ride.status.value,
+            passenger_ready_at=booking.passenger_ready_at,
+            passenger_boarding_confirmed_at=booking.passenger_boarding_confirmed_at,
             created_at=booking.created_at,
         )
         for booking, ride in results
@@ -102,6 +109,70 @@ def create_booking(
             extra={"correlation_id": correlation_id},
         )
         raise HTTPException(status_code=400, detail=f"booking failed: {str(e)}")
+
+
+@router.post("/{booking_id}/ready", response_model=BookingResponse)
+def mark_ready_for_pickup(
+    booking_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    correlation_id = request.state.correlation_id
+    try:
+        booking = BookingService.mark_ready(
+            db=db,
+            booking_id=booking_id,
+            passenger_id=user_id,
+            correlation_id=correlation_id,
+        )
+        return BookingResponse(booking_id=booking.id, status=booking.status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{booking_id}/board", response_model=BookingResponse)
+def board_booking(
+    booking_id: str,
+    payload: BookingBoardRequest,
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    correlation_id = request.state.correlation_id
+    try:
+        booking = BookingService.board_booking(
+            db=db,
+            booking_id=booking_id,
+            driver_id=user_id,
+            boarded_seats=payload.boarded_seats,
+            correlation_id=correlation_id,
+        )
+        return BookingResponse(booking_id=booking.id, status=booking.status)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{booking_id}/confirm-boarding", response_model=BookingResponse)
+def confirm_boarding(
+    booking_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    correlation_id = request.state.correlation_id
+    try:
+        booking = BookingService.confirm_boarding(
+            db=db,
+            booking_id=booking_id,
+            passenger_id=user_id,
+            correlation_id=correlation_id,
+        )
+        return BookingResponse(booking_id=booking.id, status=booking.status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/{booking_id}/cancel")
@@ -172,20 +243,5 @@ def get_booking_status(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """Check if the current user has a confirmed booking for this ride."""
-    booking = (
-        db.query(Booking)
-        .filter(Booking.ride_id == ride_id, Booking.passenger_id == user_id, Booking.status.in_(["PAID_HELD", "CONFIRMED"]))
-        .first()
-    )
-    if booking:
-        return BookingStatusResponse(
-            has_booking=True, 
-            booking_id=booking.id, 
-            status=booking.status
-        )
-    return BookingStatusResponse(
-        has_booking=False, 
-        booking_id=None, 
-        status=None
-    )
+    status_payload = BookingService.get_booking_status(db, ride_id=ride_id, passenger_id=user_id)
+    return BookingStatusResponse(**status_payload)

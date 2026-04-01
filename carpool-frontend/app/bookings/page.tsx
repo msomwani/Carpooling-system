@@ -3,21 +3,29 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Calendar, MapPin, X, History, User, Car, Clock, ChevronRight, RefreshCw } from "lucide-react"
+import { Loader2, X, History, User, Car, Clock, Calendar, ChevronRight, RefreshCw } from "lucide-react"
 import { useRole } from "@/lib/RoleContext"
 import { useAuth } from "@/lib/AuthContext"
 import { RoleSwitcher } from "@/components/RoleSwitcher"
 
-type BookingHistoryItem = {
-  event_id: string
+type PassengerBooking = {
   booking_id: string
   ride_id: string
-  action: string
-  occurred_at: string
-  correlation_id: string | null
+  source: string
+  destination: string
+  departure_time: string
+  seats_booked: number
+  boarded_seats: number
+  price_per_seat: number
+  status: "PENDING_PAYMENT" | "PAID_HELD" | "CONFIRMED" | "REFUNDED" | "CANCELLED"
+  trip_status: "BOOKED" | "READY_AT_PICKUP" | "BOARDED" | "DROPPED" | "NO_SHOW"
+  ride_status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED" | "MISSED_START"
+  passenger_ready_at: string | null
+  passenger_boarding_confirmed_at: string | null
+  created_at: string
 }
 
 type DriverRide = {
@@ -28,7 +36,7 @@ type DriverRide = {
   available_seats: number
   price_per_seat: number
   total_seats: number
-  status: "ACTIVE" | "COMPLETED" | "CANCELLED"
+  status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED" | "MISSED_START"
   source_lat: number
   source_lng: number
   destination_lat: number
@@ -36,10 +44,31 @@ type DriverRide = {
   vehicle_id: string | null
 }
 
+const getApiErrorMessage = async (response: Response, fallback: string) => {
+  try {
+    const data = await response.json()
+    if (typeof data?.detail === "string" && data.detail.trim()) {
+      return data.detail
+    }
+  } catch {
+    // Ignore JSON parse failures and fall back to the default message.
+  }
+
+  return fallback
+}
+
+const normalizeCancelBookingError = (message: string) => {
+  if (message.includes("Failed to process refund with Razorpay")) {
+    return "Cancellation could not be completed because Razorpay could not process the refund right now. Please try again shortly."
+  }
+
+  return message
+}
+
 export default function BookingsPage() {
   const { role } = useRole()
   const { getAuthHeaders } = useAuth()
-  const [bookings, setBookings] = useState<BookingHistoryItem[]>([])
+  const [bookings, setBookings] = useState<PassengerBooking[]>([])
   const [driverRides, setDriverRides] = useState<DriverRide[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +85,7 @@ export default function BookingsPage() {
     setError(null)
     setIsUnauthorized(false)
     try {
-      const response = await fetch("/api/bookings/history", {
+      const response = await fetch("/api/bookings/my", {
         headers: getAuthHeaders(),
         credentials: "include",
       })
@@ -66,9 +95,9 @@ export default function BookingsPage() {
       } else if (response.status === 401) {
         setIsUnauthorized(true)
       } else {
-        setError("Could not load your booking history.")
+        setError("Could not load your bookings.")
       }
-    } catch (error) {
+    } catch {
       setError("Cannot connect to server.")
     } finally {
       setIsLoading(false)
@@ -92,7 +121,7 @@ export default function BookingsPage() {
       } else {
         setError("Could not load your offered rides.")
       }
-    } catch (error) {
+    } catch {
       setError("Cannot connect to server.")
     } finally {
       setIsLoading(false)
@@ -109,6 +138,7 @@ export default function BookingsPage() {
 
   const handleCancelBooking = async (bookingId: string) => {
     if (!confirm("Are you sure you want to cancel this booking?")) return
+    setError(null)
     setCancelling(bookingId)
     try {
       const response = await fetch(`/api/bookings/${bookingId}/cancel`, {
@@ -116,9 +146,13 @@ export default function BookingsPage() {
         headers: getAuthHeaders(),
         credentials: "include",
       })
-      if (response.ok) fetchPassengerData()
+      if (response.ok) {
+        await fetchPassengerData()
+      } else {
+        setError(normalizeCancelBookingError(await getApiErrorMessage(response, "Failed to cancel booking.")))
+      }
     } catch (error) {
-      alert("Failed to cancel booking")
+      setError(normalizeCancelBookingError(error instanceof Error ? error.message : "Failed to cancel booking."))
     } finally {
       setCancelling(null)
     }
@@ -126,14 +160,23 @@ export default function BookingsPage() {
 
   const getBadge = (status: string) => {
     switch (status) {
+      case "SCHEDULED":
+      case "PAID_HELD":
+      case "BOOKED":
+      case "READY_AT_PICKUP":
+        return <Badge className="bg-amber-500 rounded-lg text-white border-none shadow-sm h-6 px-3">Scheduled</Badge>
+      case "STARTED":
+      case "BOARDED":
+        return <Badge className="bg-green-500 rounded-lg text-white border-none shadow-sm h-6 px-3">Started</Badge>
       case "CONFIRMED":
-      case "BOOKING_CONFIRMED":
-      case "ACTIVE":
-        return <Badge className="bg-green-500 rounded-lg text-white border-none shadow-sm h-6 px-3">Active</Badge>
+      case "DROPPED":
       case "COMPLETED":
         return <Badge className="bg-blue-500 rounded-lg text-white border-none shadow-sm h-6 px-3">Done</Badge>
+      case "MISSED_START":
+      case "REFUNDED":
+      case "NO_SHOW":
+        return <Badge className="bg-orange-500 rounded-lg text-white border-none shadow-sm h-6 px-3">Refunded</Badge>
       case "CANCELLED":
-      case "BOOKING_CANCELLED":
         return <Badge variant="destructive" className="rounded-lg shadow-sm h-6 px-3">Cancelled</Badge>
       default:
         return <Badge variant="secondary" className="rounded-lg h-6 px-3">{status}</Badge>
@@ -167,7 +210,7 @@ export default function BookingsPage() {
         <div className="mb-6 mt-2">
           <h1 className="text-2xl font-bold">{role === "passenger" ? "My Bookings" : "My Offered Rides"}</h1>
           <p className="text-muted-foreground text-sm">
-            {role === "passenger" ? "Rides you've booked as a passenger" : "Rides you're sharing as a driver"}
+            {role === "passenger" ? "Track your ride status, check-in, and boarding progress" : "Rides you're sharing as a driver"}
           </p>
         </div>
 
@@ -216,14 +259,14 @@ export default function BookingsPage() {
           <div className="space-y-4">
             {role === "passenger" ? (
               bookings.map((booking) => (
-                <Card key={booking.event_id} className="rounded-3xl border-none shadow-sm hover:shadow-md transition-shadow">
+                <Card key={booking.booking_id} className="rounded-3xl border-none shadow-sm hover:shadow-md transition-shadow">
                   <CardContent className="p-5">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex flex-col gap-1">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Booking ID</span>
                         <code className="text-xs bg-muted px-2 py-0.5 rounded-lg">{booking.booking_id.slice(0, 8)}</code>
                       </div>
-                      {getBadge(booking.action)}
+                      {getBadge(booking.ride_status)}
                     </div>
 
                     <div className="flex items-center gap-4 py-2 border-y border-dashed my-4">
@@ -231,12 +274,15 @@ export default function BookingsPage() {
                         <Car className="w-5 h-5" />
                       </div>
                       <div className="flex-1">
-                        <div className="text-sm font-bold truncate">Ride ID: {booking.ride_id.slice(0, 8)}</div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <div className="text-sm font-bold truncate">{booking.source} → {booking.destination}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                           <Clock className="w-3 h-3" />
-                          {new Date(booking.occurred_at).toLocaleString("en-IN", {
+                          {new Date(booking.departure_time).toLocaleString("en-IN", {
                             day: "numeric", month: "short", hour: "numeric", minute: "2-digit"
                           })}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-2">
+                          Payment: {booking.status} • Trip: {booking.trip_status} • Boarded {booking.boarded_seats}/{booking.seats_booked}
                         </div>
                       </div>
                     </div>
@@ -247,7 +293,7 @@ export default function BookingsPage() {
                           View Details
                         </Button>
                       </Link>
-                      {(booking.action === "CONFIRMED" || booking.action === "BOOKING_CONFIRMED") && (
+                      {(booking.ride_status === "SCHEDULED" && booking.status !== "CANCELLED" && booking.status !== "REFUNDED") && (
                         <Button
                           variant="ghost"
                           size="sm"

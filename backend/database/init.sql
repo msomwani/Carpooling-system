@@ -18,7 +18,9 @@ CREATE TABLE users (
 );
 
 -- Ride status enum
-CREATE TYPE ridestatus AS ENUM ('ACTIVE', 'COMPLETED', 'CANCELLED');
+CREATE TYPE ridestatus AS ENUM ('SCHEDULED', 'STARTED', 'COMPLETED', 'CANCELLED', 'MISSED_START');
+CREATE TYPE ridecompletionsource AS ENUM ('DRIVER', 'SYSTEM');
+CREATE TYPE bookingtripstatus AS ENUM ('BOOKED', 'READY_AT_PICKUP', 'BOARDED', 'DROPPED', 'NO_SHOW');
 
 -- Rides table
 CREATE TABLE rides (
@@ -35,7 +37,14 @@ CREATE TABLE rides (
     departure_time TIMESTAMP NOT NULL,
     total_seats INTEGER NOT NULL CHECK (total_seats > 0),
     available_seats INTEGER NOT NULL CHECK (available_seats >= 0),
-    status ridestatus NOT NULL DEFAULT 'ACTIVE',
+    status ridestatus NOT NULL DEFAULT 'SCHEDULED',
+    actual_started_at TIMESTAMP,
+    actual_completed_at TIMESTAMP,
+    actual_start_lat DOUBLE PRECISION,
+    actual_start_lng DOUBLE PRECISION,
+    actual_complete_lat DOUBLE PRECISION,
+    actual_complete_lng DOUBLE PRECISION,
+    completed_by ridecompletionsource,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT chk_rides_source_lat_range CHECK (source_lat IS NULL OR (source_lat >= -90 AND source_lat <= 90)),
     CONSTRAINT chk_rides_source_lng_range CHECK (source_lng IS NULL OR (source_lng >= -180 AND source_lng <= 180)),
@@ -59,10 +68,17 @@ CREATE TABLE bookings (
     ride_id UUID NOT NULL REFERENCES rides(id) ON DELETE CASCADE,
     passenger_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     seats_booked INTEGER NOT NULL CHECK (seats_booked > 0),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING_PAYMENT', 'PAID_HELD', 'CONFIRMED', 'CANCELLED')),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('PENDING_PAYMENT', 'PAID_HELD', 'CONFIRMED', 'REFUNDED', 'CANCELLED')),
+    trip_status bookingtripstatus NOT NULL DEFAULT 'BOOKED',
+    boarded_seats INTEGER NOT NULL DEFAULT 0 CHECK (boarded_seats >= 0),
     razorpay_order_id VARCHAR(100),
     razorpay_payment_id VARCHAR(100),
     razorpay_transfer_id VARCHAR(100),
+    passenger_ready_at TIMESTAMP,
+    boarded_at TIMESTAMP,
+    passenger_boarding_confirmed_at TIMESTAMP,
+    settled_amount_paise INTEGER NOT NULL DEFAULT 0 CHECK (settled_amount_paise >= 0),
+    refunded_amount_paise INTEGER NOT NULL DEFAULT 0 CHECK (refunded_amount_paise >= 0),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

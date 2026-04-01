@@ -19,7 +19,7 @@ type Ride = {
   available_seats: number
   price_per_seat: number
   total_seats: number
-  status: "ACTIVE" | "COMPLETED" | "CANCELLED"
+  status: "SCHEDULED" | "STARTED" | "COMPLETED" | "CANCELLED" | "MISSED_START"
 }
 
 export default function RidesPage() {

@@ -56,7 +56,7 @@ def sample_vehicle(db, sample_driver):
     return vehicle
 
 
-def _make_ride(db, driver_id, route_wkt=None, status=RideStatus.ACTIVE, seats=4):
+def _make_ride(db, driver_id, route_wkt=None, status=RideStatus.SCHEDULED, seats=4):
     """Helper: insert a Ride directly with a raw WKT route_geometry."""
     ride = Ride(
         id=uuid4(),

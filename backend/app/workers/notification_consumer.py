@@ -15,7 +15,20 @@ conf = {
 }
 
 consumer = Consumer(conf)
-consumer.subscribe(["ride.created", "booking.confirmed", "booking.cancelled", "booking.cancelled_by_driver", "ride.cancelled"])
+consumer.subscribe(
+    [
+        "ride.created",
+        "ride.started",
+        "booking.confirmed",
+        "booking.cancelled",
+        "booking.cancelled_by_driver",
+        "booking.ready_at_pickup",
+        "booking.boarded",
+        "booking.settled",
+        "booking.refunded",
+        "ride.cancelled",
+    ]
+)
 
 print("Notification consumer started...")
 
@@ -52,6 +65,18 @@ while True:
                 NotificationService.send_ride_created(
                     db, payload.get("driver_id"), payload.get("ride_id")
                 )
+            elif topic == "ride.started":
+                NotificationService.send_ride_started_to_driver(
+                    db, payload.get("driver_id"), payload.get("ride_id")
+                )
+            elif topic == "booking.settled":
+                NotificationService.send_ride_completed(
+                    db, payload.get("passenger_id"), payload.get("ride_id")
+                )
+            elif topic == "booking.refunded" and payload.get("reason") == "MISSED_START":
+                NotificationService.send_ride_missed_start(
+                    db, payload.get("passenger_id"), payload.get("ride_id")
+                )
             elif topic == "booking.confirmed":
                 NotificationService.send_booking_confirmed(
                     db, payload.get("passenger_id"), payload.get("ride_id")
@@ -62,6 +87,14 @@ while True:
                 )
             elif topic == "booking.cancelled_by_driver":
                 NotificationService.send_ride_cancelled_to_passenger(
+                    db, payload.get("passenger_id"), payload.get("ride_id")
+                )
+            elif topic == "booking.ready_at_pickup":
+                NotificationService.send_pickup_ready_to_passenger(
+                    db, payload.get("passenger_id"), payload.get("ride_id")
+                )
+            elif topic == "booking.boarded":
+                NotificationService.send_boarded_to_passenger(
                     db, payload.get("passenger_id"), payload.get("ride_id")
                 )
             elif topic == "ride.cancelled":
@@ -83,4 +116,3 @@ while True:
         print("Invalid message format:", exc)
 
     consumer.commit()
-

@@ -1,18 +1,25 @@
 import json
+import logging
+import math
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sa_func, cast, Float
-from datetime import datetime, timezone
-from app.rides.models import Ride, RideStatus
-from app.rides.models import Ride, RideStatus
-from app.bookings.models import Booking
-from app.users.models import User
+
+from app.bookings.models import Booking, BookingTripStatus
 from app.common.redis import redis_client
-from app.rides.schemas import RideResponse
-from datetime import timedelta
 from app.outbox.models import OutboxEvent
+from app.rides.models import Ride, RideCompletionSource, RideStatus
+from app.rides.schemas import RideManifestBookingResponse, RideResponse
+from app.users.models import User
 
 # Earth radius in kilometres (mean)
 _EARTH_RADIUS_KM = 6371.0
+_START_WINDOW_BEFORE = timedelta(minutes=30)
+_START_WINDOW_AFTER = timedelta(minutes=60)
+_AUTO_COMPLETE_AFTER = timedelta(hours=6)
+_START_PROXIMITY_METERS = 300.0
+_COMPLETE_PROXIMITY_METERS = 500.0
 
 # Predefined locations for "Smart Search" mapping
 COMMON_LOCATIONS = {
@@ -30,29 +37,300 @@ COMMON_LOCATIONS = {
     "pavagadh": {"lat": 22.5035, "lng": 73.4852},
 }
 
+logger = logging.getLogger(__name__)
+
 
 class RideService:
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _normalize_dt(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+    @staticmethod
+    def _queue_event(db: Session, event_type: str, payload: dict):
+        db.add(OutboxEvent(event_type=event_type, payload=payload))
+
+    @staticmethod
+    def _lock_bookings_for_ride(
+        db: Session,
+        *,
+        ride_id,
+        statuses: tuple[str, ...],
+    ) -> list[Booking]:
+        return (
+            db.query(Booking)
+            .filter(Booking.ride_id == ride_id, Booking.status.in_(statuses))
+            .order_by(Booking.created_at.asc(), Booking.id.asc())
+            .with_for_update()
+            .all()
+        )
+
+    @staticmethod
+    def _distance_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+        lat1_rad = math.radians(lat1)
+        lat2_rad = math.radians(lat2)
+        dlat = math.radians(lat2 - lat1)
+        dlng = math.radians(lng2 - lng1)
+
+        hav = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlng / 2) ** 2
+        )
+        return 2 * _EARTH_RADIUS_KM * 1000 * math.asin(math.sqrt(hav))
+
+    @staticmethod
+    def _ensure_ride_point(ride: Ride, *, field_prefix: str):
+        lat = getattr(ride, f"{field_prefix}_lat")
+        lng = getattr(ride, f"{field_prefix}_lng")
+        if lat is None or lng is None:
+            raise ValueError(f"Ride {field_prefix} coordinates are required for verification")
+        return lat, lng
+
+    @staticmethod
+    def _ensure_near_point(
+        ride: Ride,
+        *,
+        field_prefix: str,
+        lat: float,
+        lng: float,
+        max_distance_meters: float,
+        message: str,
+    ):
+        ride_lat, ride_lng = RideService._ensure_ride_point(ride, field_prefix=field_prefix)
+        distance = RideService._distance_meters(lat, lng, ride_lat, ride_lng)
+        if distance > max_distance_meters:
+            raise ValueError(message)
+
+    @staticmethod
+    def _serialize_route_geometry(db: Session, ride: Ride):
+        if not ride.route_geometry:
+            return
+        try:
+            from geoalchemy2 import functions as ga_func
+
+            wkt = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == ride.id).scalar()
+            if wkt:
+                ride.route_geometry = wkt
+        except Exception:
+            pass
+
+    @staticmethod
+    def _settle_started_ride(
+        db: Session,
+        *,
+        ride: Ride,
+        correlation_id: str | None = None,
+    ):
+        from app.payments.service import PaymentService
+
+        bookings = RideService._lock_bookings_for_ride(
+            db,
+            ride_id=ride.id,
+            statuses=("PAID_HELD",),
+        )
+        payment_svc = PaymentService() if bookings else None
+        amount_per_seat_paise = int(ride.price_per_seat * 100)
+        driver = db.query(User).filter(User.id == ride.driver_id).first()
+        account_id = (driver.razorpay_account_id if driver else None) or "acc_test_dummy_123"
+
+        for booking in bookings:
+            boarded_seats = max(0, min(booking.boarded_seats or 0, booking.seats_booked))
+            unboarded_seats = max(booking.seats_booked - boarded_seats, 0)
+            settled_amount = boarded_seats * amount_per_seat_paise
+            refund_amount = unboarded_seats * amount_per_seat_paise
+
+            if boarded_seats > 0:
+                transfer_id = booking.razorpay_transfer_id
+                if booking.razorpay_payment_id and payment_svc is not None:
+                    if not transfer_id:
+                        transfer_response = payment_svc.create_transfer(
+                            payment_id=booking.razorpay_payment_id,
+                            account_id=account_id,
+                            amount_in_paise=settled_amount,
+                            on_hold=True,
+                        )
+                        transfer_id = (
+                            transfer_response["items"][0]["id"]
+                            if "items" in transfer_response and transfer_response["items"]
+                            else None
+                        )
+                        if not transfer_id:
+                            raise RuntimeError(f"Settlement transfer could not be created for booking {booking.id}")
+                        booking.razorpay_transfer_id = transfer_id
+
+                    if refund_amount > 0:
+                        payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
+
+                    payment_svc.release_transfer(transfer_id)
+                    booking.settled_amount_paise = settled_amount
+                    booking.refunded_amount_paise = refund_amount
+                else:
+                    logger.warning(
+                        "Skipping external settlement for booking %s because no payment id is attached.",
+                        booking.id,
+                    )
+                    booking.settled_amount_paise = 0
+                    booking.refunded_amount_paise = 0
+
+                booking.status = "CONFIRMED"
+                booking.trip_status = BookingTripStatus.DROPPED
+                RideService._queue_event(
+                    db,
+                    "booking.settled",
+                    {
+                        "booking_id": str(booking.id),
+                        "ride_id": str(ride.id),
+                        "passenger_id": str(booking.passenger_id),
+                        "boarded_seats": boarded_seats,
+                        "refunded_amount_paise": booking.refunded_amount_paise,
+                        "settled_amount_paise": booking.settled_amount_paise,
+                        "correlation_id": correlation_id,
+                    },
+                )
+                continue
+
+            refund_total = booking.seats_booked * amount_per_seat_paise
+            if booking.razorpay_payment_id and payment_svc is not None:
+                payment_svc.refund_payment(booking.razorpay_payment_id, refund_total)
+                booking.refunded_amount_paise = refund_total
+            else:
+                logger.warning(
+                    "Skipping external refund for booking %s because no payment id is attached.",
+                    booking.id,
+                )
+                booking.refunded_amount_paise = 0
+
+            booking.settled_amount_paise = 0
+            booking.trip_status = BookingTripStatus.NO_SHOW
+            booking.status = "REFUNDED"
+            RideService._queue_event(
+                db,
+                "booking.refunded",
+                {
+                    "booking_id": str(booking.id),
+                    "ride_id": str(ride.id),
+                    "passenger_id": str(booking.passenger_id),
+                    "reason": "NO_SHOW",
+                    "refunded_amount_paise": booking.refunded_amount_paise,
+                    "correlation_id": correlation_id,
+                },
+            )
+
+    @staticmethod
+    def _refund_scheduled_ride_bookings(
+        db: Session,
+        *,
+        ride: Ride,
+        reason: str,
+        correlation_id: str | None = None,
+    ):
+        from app.payments.service import PaymentService
+
+        payment_svc = PaymentService()
+        active_bookings = RideService._lock_bookings_for_ride(
+            db,
+            ride_id=ride.id,
+            statuses=("PENDING_PAYMENT", "PAID_HELD", "CONFIRMED"),
+        )
+
+        for booking in active_bookings:
+            refund_amount = int(booking.seats_booked * ride.price_per_seat * 100)
+            if booking.razorpay_payment_id:
+                payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
+                booking.status = "REFUNDED"
+                booking.refunded_amount_paise = refund_amount
+            else:
+                booking.status = "CANCELLED"
+                booking.refunded_amount_paise = 0
+            booking.trip_status = BookingTripStatus.BOOKED
+            booking.boarded_seats = 0
+            booking.passenger_ready_at = None
+            booking.boarded_at = None
+            booking.passenger_boarding_confirmed_at = None
+            booking.settled_amount_paise = 0
+
+            RideService._queue_event(
+                db,
+                "booking.refunded",
+                {
+                    "booking_id": str(booking.id),
+                    "ride_id": str(ride.id),
+                    "passenger_id": str(booking.passenger_id),
+                    "reason": reason,
+                    "refunded_amount_paise": refund_amount if booking.razorpay_payment_id else 0,
+                    "correlation_id": correlation_id,
+                },
+            )
+
+    @staticmethod
+    def _reconcile_locked_ride(db: Session, ride: Ride) -> bool:
+        departure_time = RideService._normalize_dt(ride.departure_time)
+        if departure_time is None:
+            return False
+
+        now = RideService._now()
+        changed = False
+
+        if ride.status == RideStatus.SCHEDULED and now > departure_time + _START_WINDOW_AFTER:
+            RideService._refund_scheduled_ride_bookings(db, ride=ride, reason="MISSED_START")
+            ride.status = RideStatus.MISSED_START
+            RideService._queue_event(
+                db,
+                "ride.missed_start",
+                {"ride_id": str(ride.id), "driver_id": str(ride.driver_id)},
+            )
+            changed = True
+
+        elif ride.status == RideStatus.STARTED and now > departure_time + _AUTO_COMPLETE_AFTER:
+            ride.actual_complete_lat = ride.destination_lat
+            ride.actual_complete_lng = ride.destination_lng
+            ride.actual_completed_at = now
+            ride.completed_by = RideCompletionSource.SYSTEM
+            ride.status = RideStatus.COMPLETED
+            RideService._settle_started_ride(db, ride=ride)
+            RideService._queue_event(
+                db,
+                "ride.completed",
+                {
+                    "ride_id": str(ride.id),
+                    "driver_id": str(ride.driver_id),
+                    "completed_by": RideCompletionSource.SYSTEM.value,
+                },
+            )
+            changed = True
+
+        if changed:
+            db.commit()
+            db.refresh(ride)
+            from app.common.redis import invalidate_rides_cache
+
+            invalidate_rides_cache()
+        return changed
+
+    @staticmethod
+    def reconcile_overdue_ride(db: Session, ride: Ride) -> bool:
+        locked_ride = db.query(Ride).filter(Ride.id == ride.id).with_for_update().first()
+        if not locked_ride:
+            return False
+        return RideService._reconcile_locked_ride(db, locked_ride)
 
     @staticmethod
     def _check_overlapping_rides(db: Session, user_id: str, new_departure: datetime):
-        """
-        Check if the user is already booked on another ride (as driver or passenger)
-        within +/- 2 hours of the proposed departure time.
-        """
         window_start = new_departure - timedelta(hours=2)
         window_end = new_departure + timedelta(hours=2)
-        
-        # Strip tzinfo for querying PostgreSQL if new_departure is aware
-        # but the db might store it strangely, or keep it aware if using timezone=True
-        # Safest is just to compare directly as the engine handles timezone translation at driver level
 
-
-        # 1. Check if user is DRIVING an overlapping ACTIVE ride
         overlapping_driving = (
             db.query(Ride)
             .filter(
                 Ride.driver_id == user_id,
-                Ride.status == RideStatus.ACTIVE,
+                Ride.status.in_([RideStatus.SCHEDULED, RideStatus.STARTED]),
                 Ride.departure_time >= window_start,
                 Ride.departure_time <= window_end,
             )
@@ -61,61 +339,20 @@ class RideService:
         if overlapping_driving:
             raise ValueError("You are already scheduled to drive another ride within 2 hours of this time.")
 
-        # 2. Check if user is a PASSENGER on an overlapping CONFIRMED booking
         overlapping_riding = (
             db.query(Booking)
             .join(Ride, Ride.id == Booking.ride_id)
             .filter(
                 Booking.passenger_id == user_id,
-                Booking.status.in_(["CONFIRMED", "PAID_HELD"]),
-                Ride.status == RideStatus.ACTIVE,
+                Booking.status.in_(["PAID_HELD", "PENDING_PAYMENT"]),
+                Ride.status.in_([RideStatus.SCHEDULED, RideStatus.STARTED]),
                 Ride.departure_time >= window_start,
                 Ride.departure_time <= window_end,
             )
             .first()
         )
         if overlapping_riding:
-            raise ValueError("You already have a confirmed booking for another ride within 2 hours of this time.")
-
-    @staticmethod
-    def sync_ride_status(db: Session, ride: Ride) -> bool:
-        """
-        Check if an ACTIVE ride's departure time has passed and update to COMPLETED.
-        Returns True if status was changed, False otherwise.
-        """
-        if ride.status == RideStatus.ACTIVE and ride.departure_time:
-            now = datetime.now(timezone.utc)
-            dept = ride.departure_time
-            if dept.tzinfo is None:
-                dept = dept.replace(tzinfo=timezone.utc)
-            
-            if dept < now:
-                # Release funds for all bookings of this ride
-                from app.payments.service import PaymentService
-                from app.bookings.models import Booking
-                payment_svc = PaymentService()
-                held_bookings = db.query(Booking).filter(
-                    Booking.ride_id == ride.id,
-                    Booking.status == "PAID_HELD"
-                ).all()
-                
-                for b in held_bookings:
-                    if b.razorpay_transfer_id:
-                        try:
-                            payment_svc.release_transfer(b.razorpay_transfer_id)
-                        except Exception as e:
-                            print(f"ERROR: Failed to release transfer {b.razorpay_transfer_id}: {str(e)}")
-                    b.status = "CONFIRMED"
-                
-                db.commit()
-                db.refresh(ride)
-                print(f"DEBUG: Synced ride {ride.id} status to COMPLETED and released funds.")
-                
-                # Invalidate cache
-                from app.common.redis import invalidate_rides_cache
-                invalidate_rides_cache()
-                return True
-        return False
+            raise ValueError("You already have a booking for another ride within 2 hours of this time.")
 
     @staticmethod
     def create_ride(
@@ -135,8 +372,7 @@ class RideService:
         route_geometry: str | None = None,
     ) -> Ride:
         from app.vehicles.models import Vehicle
-        
-        # 0. Verify vehicle ownership
+
         if vehicle_id:
             vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
             if not vehicle:
@@ -147,19 +383,13 @@ class RideService:
         if total_seats <= 0:
             raise ValueError("Total seats must be greater than zero")
 
-        # Validate temporal constraints
         if departure_time:
-            now = datetime.now(timezone.utc)
-            dept = departure_time
-            if dept.tzinfo is None:
-                dept = dept.replace(tzinfo=timezone.utc)
-            if dept < now:
+            now = RideService._now()
+            dept = RideService._normalize_dt(departure_time)
+            if dept and dept < now:
                 raise ValueError("Cannot create a ride in the past")
-
-            # Check for double-booking overlaps
             RideService._check_overlapping_rides(db, driver_id, departure_time)
 
-        # Any authenticated user can create a ride — role is a preference, not a gate
         ride = Ride(
             driver_id=driver_id,
             source=source,
@@ -176,71 +406,64 @@ class RideService:
             price_per_seat=price_per_seat,
             vehicle_id=vehicle_id,
             route_geometry=route_geometry,
-            status=RideStatus.ACTIVE,
+            status=RideStatus.SCHEDULED,
         )
-
 
         db.add(ride)
-        db.flush()  # Generate UUID if not provided
+        db.flush()
 
-        outbox_event = OutboxEvent(
-            event_type="ride.created",
-            payload={
-                "ride_id": str(ride.id),
-                "driver_id": str(ride.driver_id),
-            },
+        RideService._queue_event(
+            db,
+            "ride.created",
+            {"ride_id": str(ride.id), "driver_id": str(ride.driver_id)},
         )
-        db.add(outbox_event)
         db.commit()
         db.refresh(ride)
 
         from app.common.redis import invalidate_rides_cache
-        invalidate_rides_cache()
 
+        invalidate_rides_cache()
         return ride
 
     @staticmethod
-    def _get_ride_owned_by(db: Session, ride_id: str, driver_id: str) -> Ride:
-        """Fetch an ACTIVE ride that belongs to the given driver, or raise."""
-        ride = db.query(Ride).filter(Ride.id == ride_id).first()
+    def _get_ride_owned_by(
+        db: Session,
+        ride_id: str,
+        driver_id: str,
+        *,
+        allowed_statuses: tuple[RideStatus, ...] | None = None,
+        with_lock: bool = False,
+    ) -> Ride:
+        query = db.query(Ride).filter(Ride.id == ride_id)
+        if with_lock:
+            query = query.with_for_update()
+        ride = query.first()
         if not ride:
             raise ValueError("Ride not found")
         if str(ride.driver_id) != str(driver_id):
             raise PermissionError("You are not the driver of this ride")
-        if ride.status != RideStatus.ACTIVE:
-            raise ValueError(f"Ride is already {ride.status.value}")
+        if allowed_statuses and ride.status not in allowed_statuses:
+            allowed = ", ".join(status.value for status in allowed_statuses)
+            raise ValueError(f"Ride must be in one of: {allowed}")
         return ride
 
     @staticmethod
     def get_ride_by_id(db: Session, ride_id: str):
-        """Fetch a specific ride by ID, including driver and vehicle details."""
         from app.vehicles.models import Vehicle
-        from geoalchemy2 import functions as ga_func
-        
+
         ride = db.query(Ride).filter(Ride.id == ride_id).first()
         if not ride:
             return None
-        
-        # Use a fresh query to get WKT to avoid session state issues with Geography type
-        if ride.route_geometry:
-            try:
-                wkt = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == ride_id).scalar()
-                if wkt:
-                    ride.route_geometry = wkt
-            except Exception:
-                pass # Fallback to whatever's in the object (handled by schema)
 
-        # Sync status before returning
-        RideService.sync_ride_status(db, ride)
-        
-        # Get driver info
+        RideService.reconcile_overdue_ride(db, ride)
+        db.refresh(ride)
+        RideService._serialize_route_geometry(db, ride)
+
         driver = db.query(User).filter(User.id == ride.driver_id).first()
-        
-        # Get vehicle info
         vehicle = None
         if ride.vehicle_id:
             vehicle = db.query(Vehicle).filter(Vehicle.id == ride.vehicle_id).first()
-            
+
         return {
             "ride": ride,
             "driver_name": driver.name if driver else "Unknown",
@@ -252,93 +475,193 @@ class RideService:
 
     @staticmethod
     def get_driver_rides(db: Session, driver_id: str):
-        """Fetch all rides created by the given driver, ordered by descending departure time."""
-        from geoalchemy2 import functions as ga_func
         rides = (
             db.query(Ride)
             .filter(Ride.driver_id == driver_id)
             .order_by(Ride.departure_time.desc().nulls_last())
             .all()
         )
-        for r in rides:
-            RideService.sync_ride_status(db, r)
-            if r.route_geometry:
-                r.route_geometry = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == r.id).scalar()
+        for ride in rides:
+            RideService.reconcile_overdue_ride(db, ride)
+            db.refresh(ride)
+            RideService._serialize_route_geometry(db, ride)
         return rides
 
     @staticmethod
-    def complete_ride(db: Session, *, ride_id: str, driver_id: str) -> Ride:
-        """Mark a ride as COMPLETED. Only the owning driver can do this."""
+    def get_ride_manifest(db: Session, *, ride_id: str, driver_id: str) -> list[RideManifestBookingResponse]:
         ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
-        
-        if ride.departure_time:
-            now = datetime.now(timezone.utc)
-            dept = ride.departure_time
-            if dept.tzinfo is None:
-                dept = dept.replace(tzinfo=timezone.utc)
-            if dept > now:
-                raise ValueError("Cannot complete a ride before its departure time")
-                
-        ride.status = RideStatus.COMPLETED
-        
-        # Release funds for all bookings of this ride
-        from app.payments.service import PaymentService
-        from app.bookings.models import Booking
-        payment_svc = PaymentService()
-        held_bookings = db.query(Booking).filter(
-            Booking.ride_id == ride.id,
-            Booking.status == "PAID_HELD"
-        ).all()
-        
-        for b in held_bookings:
-            if b.razorpay_transfer_id:
-                try:
-                    payment_svc.release_transfer(b.razorpay_transfer_id)
-                except Exception as e:
-                    # In a real app, we'd log this to a retry queue
-                    print(f"ERROR: Failed to release transfer {b.razorpay_transfer_id}: {str(e)}")
-            b.status = "CONFIRMED"
+        RideService.reconcile_overdue_ride(db, ride)
+
+        rows = (
+            db.query(Booking, User)
+            .join(User, User.id == Booking.passenger_id)
+            .filter(
+                Booking.ride_id == ride_id,
+                Booking.status.in_(["PAID_HELD", "CONFIRMED", "REFUNDED"]),
+            )
+            .order_by(Booking.created_at.asc())
+            .all()
+        )
+
+        return [
+            RideManifestBookingResponse(
+                booking_id=booking.id,
+                passenger_name=user.name,
+                seats_booked=booking.seats_booked,
+                boarded_seats=booking.boarded_seats,
+                trip_status=booking.trip_status.value,
+                passenger_ready_at=booking.passenger_ready_at,
+                passenger_boarding_confirmed_at=booking.passenger_boarding_confirmed_at,
+                payment_status=booking.status,
+            )
+            for booking, user in rows
+        ]
+
+    @staticmethod
+    def start_ride(
+        db: Session,
+        *,
+        ride_id: str,
+        driver_id: str,
+        lat: float,
+        lng: float,
+        correlation_id: str | None = None,
+    ) -> Ride:
+        ride = RideService._get_ride_owned_by(
+            db,
+            ride_id,
+            driver_id,
+            allowed_statuses=(RideStatus.SCHEDULED,),
+            with_lock=True,
+        )
+
+        departure_time = RideService._normalize_dt(ride.departure_time)
+        now = RideService._now()
+        if departure_time is None:
+            raise ValueError("Ride departure time is required")
+        if now < departure_time - _START_WINDOW_BEFORE or now > departure_time + _START_WINDOW_AFTER:
+            raise ValueError("Ride can only be started from 30 minutes before to 60 minutes after departure time")
+
+        RideService._ensure_near_point(
+            ride,
+            field_prefix="source",
+            lat=lat,
+            lng=lng,
+            max_distance_meters=_START_PROXIMITY_METERS,
+            message="You must be near the ride pickup point to start the ride",
+        )
+
+        ride.status = RideStatus.STARTED
+        ride.actual_started_at = now
+        ride.actual_start_lat = lat
+        ride.actual_start_lng = lng
+        RideService._queue_event(
+            db,
+            "ride.started",
+            {
+                "ride_id": str(ride.id),
+                "driver_id": str(ride.driver_id),
+                "correlation_id": correlation_id,
+            },
+        )
 
         db.commit()
         db.refresh(ride)
-
         from app.common.redis import invalidate_rides_cache
-        invalidate_rides_cache()
 
+        invalidate_rides_cache()
+        return ride
+
+    @staticmethod
+    def complete_ride(
+        db: Session,
+        *,
+        ride_id: str,
+        driver_id: str | None = None,
+        lat: float | None = None,
+        lng: float | None = None,
+        correlation_id: str | None = None,
+        completed_by: RideCompletionSource = RideCompletionSource.DRIVER,
+        require_driver: bool = True,
+        skip_location_check: bool = False,
+    ) -> Ride:
+        query = db.query(Ride).filter(Ride.id == ride_id).with_for_update()
+        ride = query.first()
+        if not ride:
+            raise ValueError("Ride not found")
+        if require_driver:
+            if str(ride.driver_id) != str(driver_id):
+                raise PermissionError("You are not the driver of this ride")
+        if ride.status != RideStatus.STARTED:
+            raise ValueError("Ride must be started before it can be completed")
+
+        if not skip_location_check:
+            if lat is None or lng is None:
+                raise ValueError("Driver location is required to complete the ride")
+            RideService._ensure_near_point(
+                ride,
+                field_prefix="destination",
+                lat=lat,
+                lng=lng,
+                max_distance_meters=_COMPLETE_PROXIMITY_METERS,
+                message="You must be near the destination to complete the ride",
+            )
+
+        ride.status = RideStatus.COMPLETED
+        ride.actual_completed_at = RideService._now()
+        ride.actual_complete_lat = lat
+        ride.actual_complete_lng = lng
+        ride.completed_by = completed_by
+
+        RideService._settle_started_ride(db, ride=ride, correlation_id=correlation_id)
+        RideService._queue_event(
+            db,
+            "ride.completed",
+            {
+                "ride_id": str(ride.id),
+                "driver_id": str(ride.driver_id),
+                "completed_by": completed_by.value,
+                "correlation_id": correlation_id,
+            },
+        )
+
+        db.commit()
+        db.refresh(ride)
+        from app.common.redis import invalidate_rides_cache
+
+        invalidate_rides_cache()
         return ride
 
     @staticmethod
     def cancel_ride(db: Session, *, ride_id: str, driver_id: str, correlation_id: str = None) -> Ride:
-        """Cancel a ride and cascade cancellations to passengers."""
-        from app.outbox.models import OutboxEvent
-
-        ride = RideService._get_ride_owned_by(db, ride_id, driver_id)
-        now = datetime.now(timezone.utc)
-
-        # 1. Fetch all confirmed and paid bookings for this ride
-        active_bookings = (
-            db.query(Booking)
-            .filter(Booking.ride_id == ride_id, Booking.status.in_(["CONFIRMED", "PAID_HELD"]))
-            .all()
+        ride = RideService._get_ride_owned_by(
+            db,
+            ride_id,
+            driver_id,
+            allowed_statuses=(RideStatus.SCHEDULED,),
+            with_lock=True,
         )
+        now = RideService._now()
 
+        active_bookings = RideService._lock_bookings_for_ride(
+            db,
+            ride_id=ride_id,
+            statuses=("PENDING_PAYMENT", "CONFIRMED", "PAID_HELD"),
+        )
         has_passengers = len(active_bookings) > 0
 
-        # 2. Check penalty logic
         if ride.departure_time:
-            dept = ride.departure_time
-            if dept.tzinfo is None:
-                dept = dept.replace(tzinfo=timezone.utc)
+            dept = RideService._normalize_dt(ride.departure_time)
             time_until_departure = dept - now
             is_late_cancellation = time_until_departure < timedelta(hours=1.5)
 
             if has_passengers and is_late_cancellation:
                 raise ValueError("Cannot cancel a ride with confirmed passengers within 1.5 hours of departure.")
-            
-            # Trigger driver cancellation event
-            outbox_event = OutboxEvent(
-                event_type="ride.cancelled",
-                payload={
+
+            RideService._queue_event(
+                db,
+                "ride.cancelled",
+                {
                     "ride_id": str(ride.id),
                     "driver_id": str(ride.driver_id),
                     "has_passengers": has_passengers,
@@ -346,41 +669,34 @@ class RideService:
                     "correlation_id": correlation_id,
                 },
             )
-            db.add(outbox_event)
 
-        # 3. Cascade cancellation to passengers
+        from app.payments.service import PaymentService
+
+        payment_svc = PaymentService()
         for booking in active_bookings:
             if booking.razorpay_payment_id:
-                from app.payments.service import PaymentService
-                payment_svc = PaymentService()
                 refund_amount = int(booking.seats_booked * ride.price_per_seat * 100)
-                try:
-                    payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
-                    print(f"INFO: Successfully refunded {refund_amount} paise to booking {booking.id}")
-                except Exception as e:
-                    print(f"ERROR: Failed to refund payment {booking.razorpay_payment_id}: {str(e)}")
-
+                payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
+                booking.refunded_amount_paise = refund_amount
             booking.status = "CANCELLED"
-            # Trigger passenger refund event
-            outbox_event = OutboxEvent(
-                event_type="booking.cancelled_by_driver",
-                payload={
+            RideService._queue_event(
+                db,
+                "booking.cancelled_by_driver",
+                {
                     "booking_id": str(booking.id),
                     "ride_id": str(ride.id),
                     "passenger_id": str(booking.passenger_id),
                     "correlation_id": correlation_id,
                 },
             )
-            db.add(outbox_event)
 
-        # 4. Cancel the ride itself
         ride.status = RideStatus.CANCELLED
         db.commit()
         db.refresh(ride)
 
         from app.common.redis import invalidate_rides_cache
-        invalidate_rides_cache()
 
+        invalidate_rides_cache()
         return ride
 
     @staticmethod
@@ -392,17 +708,6 @@ class RideService:
         radius_km: float = 10.0,
         role: str = "source",
     ) -> list[Ride]:
-        """
-        Find ACTIVE rides within *radius_km* of a given (lat, lng).
-
-        Modes (role):
-        - "source"      — matches rides whose starting point is nearby.
-        - "destination" — matches rides whose ending point is nearby.
-        - "path"        — matches rides whose full route geometry (LineString)
-                          passes within radius_km of the point. Rides without
-                          a stored route_geometry are excluded.
-        """
-        # PostGIS expects metres; convert km → m
         radius_m = radius_km * 1000
         search_point = f"SRID=4326;POINT({lng} {lat})"
 
@@ -412,25 +717,21 @@ class RideService:
                 .filter(
                     Ride.route_geometry.isnot(None),
                     Ride.available_seats > 0,
-                    Ride.status == RideStatus.ACTIVE,
+                    Ride.status == RideStatus.SCHEDULED,
                     Ride.departure_time > sa_func.now(),
                     sa_func.ST_DWithin(Ride.route_geometry, search_point, radius_m),
                 )
                 .all()
             )
 
-        # Source / destination point-based fallback
-        if role == "source":
-            loc_col = Ride.source_location
-        else:
-            loc_col = Ride.destination_location
+        loc_col = Ride.source_location if role == "source" else Ride.destination_location
 
         return (
             db.query(Ride)
             .filter(
                 loc_col.isnot(None),
                 Ride.available_seats > 0,
-                Ride.status == RideStatus.ACTIVE,
+                Ride.status == RideStatus.SCHEDULED,
                 Ride.departure_time > sa_func.now(),
                 sa_func.ST_DWithin(loc_col, search_point, radius_m),
             )
@@ -439,7 +740,6 @@ class RideService:
 
     @staticmethod
     def _geocode(name: str) -> tuple[float, float] | None:
-        """Simple mapping of common names to coordinates."""
         clean_name = name.lower().strip()
         for key, coords in COMMON_LOCATIONS.items():
             if key in clean_name:
@@ -461,7 +761,7 @@ class RideService:
 
         query = db.query(Ride).filter(
             Ride.available_seats > 0,
-            Ride.status == RideStatus.ACTIVE,
+            Ride.status == RideStatus.SCHEDULED,
             Ride.departure_time > sa_func.now(),
         )
 
@@ -469,29 +769,23 @@ class RideService:
         d_coords = RideService._geocode(destination)
 
         if s_coords and d_coords:
-            # Smart Spatial Search: Both source and destination points must be near the route
             s_point = f"SRID=4326;POINT({s_coords[1]} {s_coords[0]})"
             d_point = f"SRID=4326;POINT({d_coords[1]} {d_coords[0]})"
             query = query.filter(
                 Ride.route_geometry.isnot(None),
-                sa_func.ST_DWithin(Ride.route_geometry, s_point, 5000), # 5km tolerance
-                sa_func.ST_DWithin(Ride.route_geometry, d_point, 5000), # 5km tolerance
+                sa_func.ST_DWithin(Ride.route_geometry, s_point, 5000),
+                sa_func.ST_DWithin(Ride.route_geometry, d_point, 5000),
             )
         else:
-            # Fallback to substring matching
             query = query.filter(
                 Ride.source.ilike(f"%{source}%"),
                 Ride.destination.ilike(f"%{destination}%"),
             )
 
-        runs = query.all()
-        
-        # Convert geometry to WKT for all results
-        from geoalchemy2 import functions as ga_func
-        for r in runs:
-            if r.route_geometry:
-                r.route_geometry = db.query(ga_func.ST_AsText(Ride.route_geometry)).filter(Ride.id == r.id).scalar()
-                
-        result = [RideResponse.model_validate(r) for r in runs]
-        redis_client.setex(cache_key, 60, json.dumps([r.model_dump(mode="json") for r in result]))
+        rides = query.all()
+        for ride in rides:
+            RideService._serialize_route_geometry(db, ride)
+
+        result = [RideResponse.model_validate(ride) for ride in rides]
+        redis_client.setex(cache_key, 60, json.dumps([ride.model_dump(mode="json") for ride in result]))
         return result

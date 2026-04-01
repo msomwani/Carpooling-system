@@ -2,11 +2,13 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.payments.service import PaymentService
-from app.common.db import get_db
+
+from app.auth.dependencies import get_current_user_id
 from app.bookings.models import Booking
+from app.common.db import get_db
+from app.outbox.models import OutboxEvent
+from app.payments.service import PaymentService
 from app.rides.models import Ride
-from app.users.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -15,8 +17,8 @@ payment_service = PaymentService()
 
 
 class CreateOrderRequest(BaseModel):
-    amount: int       # Amount in INR (we convert to paise inside the service)
     booking_id: str
+    amount: int | None = None
 
 
 class VerifyPaymentRequest(BaseModel):
@@ -27,24 +29,51 @@ class VerifyPaymentRequest(BaseModel):
 
 
 @router.post("/create-order")
-async def create_order(body: CreateOrderRequest):
+async def create_order(
+    body: CreateOrderRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Creates a Razorpay order.
     Called by the frontend BEFORE showing the payment modal.
     Returns the order object (including order.id) needed to open the modal.
     """
-    logger.info(f"Payment order request: amount={body.amount}, booking_id={body.booking_id}")
-    order = payment_service.create_order(body.amount, body.booking_id)
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == body.booking_id, Booking.passenger_id == user_id)
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.status != "PENDING_PAYMENT":
+        raise HTTPException(status_code=400, detail="Booking is not awaiting payment.")
+
+    ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found during order creation")
+
+    expected_amount = booking.seats_booked * ride.price_per_seat
+    if expected_amount <= 0:
+        raise HTTPException(status_code=400, detail="This booking does not require online payment.")
+
+    logger.info(f"Payment order request: booking_id={body.booking_id}, amount={expected_amount}")
+    order = payment_service.create_order(expected_amount, body.booking_id)
+    booking.razorpay_order_id = order.get("id")
+    db.commit()
     return order
 
 
 @router.post("/verify")
-async def verify_payment(body: VerifyPaymentRequest, db: Session = Depends(get_db)):
+async def verify_payment(
+    body: VerifyPaymentRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """
-    Verifies the Razorpay payment signature after the user pays.
-    Also creates an on-hold transfer to the driver using Razorpay Route.
+    Verifies the Razorpay payment signature after the user pays and keeps funds on hold
+    until the ride is completed.
     """
-    # 1. Verify Signature
     is_valid = payment_service.verify_payment(
         body.razorpay_order_id,
         body.razorpay_payment_id,
@@ -54,45 +83,58 @@ async def verify_payment(body: VerifyPaymentRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Payment verification failed. Invalid signature.")
 
     # 2. Fetch Booking and Ride details
-    booking = db.query(Booking).filter(Booking.id == body.booking_id).first()
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == body.booking_id, Booking.passenger_id == user_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found during verification")
+    if booking.status == "PAID_HELD":
+        if (
+            booking.razorpay_order_id == body.razorpay_order_id
+            and booking.razorpay_payment_id == body.razorpay_payment_id
+        ):
+            return {
+                "status": "verified",
+                "booking_status": "PAID_HELD",
+                "payment_id": body.razorpay_payment_id,
+                "transfer_id": booking.razorpay_transfer_id,
+            }
+        raise HTTPException(status_code=400, detail="Payment has already been verified for this booking.")
+    if booking.status != "PENDING_PAYMENT":
+        raise HTTPException(status_code=400, detail="Booking is not awaiting payment verification.")
+    if not booking.razorpay_order_id:
+        raise HTTPException(status_code=400, detail="Payment has not been initialized for this booking.")
+    if booking.razorpay_order_id != body.razorpay_order_id:
+        raise HTTPException(status_code=400, detail="Payment order does not match this booking.")
 
     ride = db.query(Ride).filter(Ride.id == booking.ride_id).first()
-    driver = db.query(User).filter(User.id == ride.driver_id).first()
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found during verification")
 
-    # 3. Create Transfer (On Hold) to Driver
-    # In production, driver MUST have a linked razorpay_account_id.
-    # We use a dummy for testing if none exists.
-    account_id = driver.razorpay_account_id or "acc_test_dummy_123"
-    
-    amount_in_paise = int(booking.seats_booked * ride.price_per_seat * 100)
-    
-    try:
-        transfer_response = payment_service.create_transfer(
-            payment_id=body.razorpay_payment_id,
-            account_id=account_id,
-            amount_in_paise=amount_in_paise
-        )
-        # Razorpay returns a list of transfers
-        transfer_id = transfer_response['items'][0]['id'] if 'items' in transfer_response else None
-    except Exception as e:
-        logger.error(f"Failed to create Razorpay transfer: {str(e)}")
-        # We still mark it as paid so the user doesn't lose money, 
-        # but the admin will need to settle it manually if the transfer failed.
-        transfer_id = None
-
-    # 4. Update Booking Status
     booking.status = "PAID_HELD"
     booking.razorpay_order_id = body.razorpay_order_id
     booking.razorpay_payment_id = body.razorpay_payment_id
-    booking.razorpay_transfer_id = transfer_id
-    
+    booking.razorpay_transfer_id = None
+
+    db.add(
+        OutboxEvent(
+            event_type="booking.confirmed",
+            payload={
+                "booking_id": str(booking.id),
+                "ride_id": str(booking.ride_id),
+                "passenger_id": str(booking.passenger_id),
+                "payment_status": booking.status,
+                "trip_status": booking.trip_status.value,
+            },
+        )
+    )
     db.commit()
 
     return {
-        "status": "verified", 
-        "booking_status": "PAID_HELD", 
+        "status": "verified",
+        "booking_status": "PAID_HELD",
         "payment_id": body.razorpay_payment_id,
-        "transfer_id": transfer_id
+        "transfer_id": None,
     }

@@ -139,10 +139,15 @@ def sample_ride(db, sample_driver):
         id=uuid4(),
         driver_id=sample_driver.id,
         source="Test Source",
+        source_lat=22.3072,
+        source_lng=73.1812,
         destination="Test Destination",
+        destination_lat=22.4961,
+        destination_lng=73.4622,
         departure_time=datetime.now(timezone.utc) + timedelta(hours=2),
         total_seats=4,
-        available_seats=4
+        available_seats=4,
+        price_per_seat=100,
     )
     db.add(ride)
     db.commit()
