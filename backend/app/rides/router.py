@@ -16,9 +16,6 @@ from app.auth.dependencies import get_current_user_id
 router = APIRouter(prefix="/rides", tags=["Rides"])
 
 
-
-
-
 @router.post("", response_model=RideResponse)
 def create_ride(
     payload: RideCreateRequest,
@@ -39,11 +36,12 @@ def create_ride(
             destination=payload.destination,
             destination_lat=payload.destination_lat,
             destination_lng=payload.destination_lng,
-            route_geometry=payload.route_geometry
+            route_geometry=payload.route_geometry,
         )
         return ride
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
+
 
 @router.post("/{ride_id}/start", response_model=RideResponse)
 def start_ride(
@@ -54,7 +52,11 @@ def start_ride(
     db: Session = Depends(get_db),
 ):
     try:
-        correlation_id = request.state.correlation_id if hasattr(request.state, "correlation_id") else None
+        correlation_id = (
+            request.state.correlation_id
+            if hasattr(request.state, "correlation_id")
+            else None
+        )
         ride = RideService.start_ride(
             db,
             ride_id=ride_id,
@@ -71,6 +73,8 @@ def start_ride(
 
 
 @router.post("/{ride_id}/complete", response_model=RideResponse)
+
+# Endpoint for driver to send periodic location updates (used for arrival alerts)
 def complete_ride(
     ride_id: str,
     payload: RideLocationRequest,
@@ -79,7 +83,11 @@ def complete_ride(
     db: Session = Depends(get_db),
 ):
     try:
-        correlation_id = request.state.correlation_id if hasattr(request.state, "correlation_id") else None
+        correlation_id = (
+            request.state.correlation_id
+            if hasattr(request.state, "correlation_id")
+            else None
+        )
         ride = RideService.complete_ride(
             db,
             ride_id=ride_id,
@@ -103,14 +111,15 @@ def cancel_ride(
     db: Session = Depends(get_db),
 ):
     """Cancel a ride. Only the owning driver can call this."""
-    correlation_id = request.state.correlation_id if hasattr(request.state, "correlation_id") else None
-    
+    correlation_id = (
+        request.state.correlation_id
+        if hasattr(request.state, "correlation_id")
+        else None
+    )
+
     try:
         ride = RideService.cancel_ride(
-            db, 
-            ride_id=ride_id, 
-            driver_id=user_id,
-            correlation_id=correlation_id
+            db, ride_id=ride_id, driver_id=user_id, correlation_id=correlation_id
         )
         return ride
     except PermissionError as e:
@@ -148,7 +157,9 @@ def search_rides_nearby(
     - **role=destination**: rides ending near the point.
     - **role=path**: rides whose full route passes near the point (uses `route_geometry` LineString).
     """
-    rides = RideService.search_nearby(db, lat=lat, lng=lng, radius_km=radius_km, role=role)
+    rides = RideService.search_nearby(
+        db, lat=lat, lng=lng, radius_km=radius_km, role=role
+    )
     return rides
 
 
@@ -160,13 +171,17 @@ def search_rides(
 ):
     return RideService.search_rides(db, source=source, destination=destination)
 
+
 @router.get("/me", response_model=list[RideResponse])
 def get_my_rides(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """Fetch all rides created by the authenticated driver."""
-    return [RideResponse.model_validate(r) for r in RideService.get_driver_rides(db, driver_id=user_id)]
+    return [
+        RideResponse.model_validate(r)
+        for r in RideService.get_driver_rides(db, driver_id=user_id)
+    ]
 
 
 @router.get("/{ride_id}", response_model=RideDetailResponse)

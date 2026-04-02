@@ -38,17 +38,20 @@ app.add_middleware(SlowAPIMiddleware)
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Inject security-hardening HTTP response headers on every response."""
+
     async def dispatch(self, request: StarletteRequest, call_next):
         response = await call_next(request)
         # Prevent MIME-type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
         # Block embedding in iframes (clickjacking protection)
         response.headers["X-Frame-Options"] = "DENY"
-        
+
         # Force HTTPS in production
         if settings.environment == "production":
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-            
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+
         # Content Security Policy
         csp_blocks = [
             "default-src 'self'",
@@ -60,7 +63,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-ancestors 'none'",
         ]
         response.headers["Content-Security-Policy"] = "; ".join(csp_blocks)
-        
+
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
@@ -83,11 +86,16 @@ app.include_router(rides_router)
 app.include_router(analytics_router)
 app.include_router(vehicles_router)
 app.include_router(payments_router)
+# Include notifications router for WebSocket endpoint
+from app.notifications.router import router as notifications_router
+
+app.include_router(notifications_router)
 
 # Serve static frontend files (maps.html, etc.)
 _static_dir = Path(__file__).resolve().parent / "static"
 _static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 @app.get("/healthz")
 def health_check():
@@ -122,6 +130,18 @@ def readiness_check():
 @app.get("/metrics")
 def metrics(request: Request):
     """Protected metrics endpoint — requires X-Metrics-Key header matching METRICS_API_KEY env var."""
-    if not settings.metrics_api_key or request.headers.get("X-Metrics-Key") != settings.metrics_api_key:
+    if (
+        not settings.metrics_api_key
+        or request.headers.get("X-Metrics-Key") != settings.metrics_api_key
+    ):
         raise HTTPException(status_code=403, detail="Forbidden")
     return get_metrics()
+
+
+# Generic exception handler to avoid leaking internal details
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc):
+    import logging
+
+    logging.error(f"Unhandled exception: {exc}", exc_info=exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
