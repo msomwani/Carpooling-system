@@ -7,6 +7,25 @@ from app.common.db import SessionLocal
 from app.notifications.service import NotificationService
 from app.events.models import ProcessedEvent
 from app.config.settings import settings
+import logging
+import signal
+from app.common.logging_config import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
+print("[worker] Notification worker started")
+
+# Graceful shutdown flag
+_should_stop = False
+
+
+def _handle_sigterm(signum, frame):
+    global _should_stop
+    _should_stop = True
+    logger.info("SIGTERM received – shutting down notification consumer...")
+
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
 
 conf = {
     "bootstrap.servers": settings.kafka_bootstrap_servers,
@@ -30,17 +49,17 @@ consumer.subscribe(
     ]
 )
 
-print("Notification consumer started...")
+logger.info("Notification consumer started...")
 
 CONSUMER_NAME = "notification_consumer"
 
-while True:
+while not _should_stop:
     msg = consumer.poll(1.0)
 
     if msg is None:
         continue
     if msg.error():
-        print("Consumer error:", msg.error())
+        logger.error("Consumer error: %s", msg.error())
         continue
 
     try:
@@ -73,7 +92,9 @@ while True:
                 NotificationService.send_ride_completed(
                     db, payload.get("passenger_id"), payload.get("ride_id")
                 )
-            elif topic == "booking.refunded" and payload.get("reason") == "MISSED_START":
+            elif (
+                topic == "booking.refunded" and payload.get("reason") == "MISSED_START"
+            ):
                 NotificationService.send_ride_missed_start(
                     db, payload.get("passenger_id"), payload.get("ride_id")
                 )
@@ -105,14 +126,17 @@ while True:
             db.commit()
         except IntegrityError:
             db.rollback()
-            print(f"Skipping already processed event: {event_id}")
+            logger.info("Skipping already processed event: %s", event_id)
         except Exception as exc:
             db.rollback()
-            print(f"Error processing notification: {exc}")
+            logger.exception("Error processing notification: %s", exc)
         finally:
             db.close()
 
     except Exception as exc:
-        print("Invalid message format:", exc)
+        logger.error("Invalid message format: %s", exc)
 
     consumer.commit()
+
+logger.info("Notification consumer exiting – closing Kafka consumer.")
+consumer.close()

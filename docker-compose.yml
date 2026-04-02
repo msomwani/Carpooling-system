@@ -71,6 +71,14 @@ services:
         kafka-topics --create --if-not-exists --topic booking.confirmed --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
         kafka-topics --create --if-not-exists --topic booking.cancelled --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
         kafka-topics --create --if-not-exists --topic booking.dlq --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic ride.created --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic ride.started --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic ride.cancelled --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic booking.settled --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic booking.refunded --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic booking.ready_at_pickup --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic booking.boarded --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+        kafka-topics --create --if-not-exists --topic booking.cancelled_by_driver --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
     restart: "no"
 
   app:
@@ -137,6 +145,31 @@ services:
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
     command: ["python", "-m", "app.workers.booking_consumer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka_topics:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    volumes:
+      - ./backend/app:/app/backend/app
+
+  notification_consumer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      REDIS_URL: ${REDIS_URL}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+    command: ["python", "-m", "app.workers.notification_consumer"]
     depends_on:
       postgres:
         condition: service_healthy
