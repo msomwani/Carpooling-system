@@ -11,7 +11,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
       interval: 5s
       timeout: 5s
       retries: 15
@@ -35,29 +35,26 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Listeners: plaintext and SASL_SSL (SSL+SASL)
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093,INTERNAL_SSL://0.0.0.0:9094,EXTERNAL_SSL://0.0.0.0:9095
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9092,INTERNAL_SSL://kafka:9094,EXTERNAL_SSL://localhost:9094
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,INTERNAL_SSL:SASL_SSL,EXTERNAL_SSL:SASL_SSL
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_SASL_MECHANISM: PLAIN
-      KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="${KAFKA_PASSWORD}";
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "cub kafka-ready -b localhost:9092 1 20"]
+      test: [ "CMD-SHELL", "cub kafka-ready -b localhost:9092 1 20" ]
       interval: 10s
       timeout: 10s
       retries: 12
 
   redis:
     image: redis:7
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD}" ]
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 15
@@ -95,7 +92,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
-    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: [ "python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -122,7 +119,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
-    command: ["python", "-m", "app.workers.outbox_processor"]
+    command: [ "python", "-m", "app.workers.outbox_processor" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,7 +144,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
-    command: ["python", "-m", "app.workers.booking_consumer"]
+    command: [ "python", "-m", "app.workers.booking_consumer" ]
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,7 +169,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
-    command: ["python", "-m", "app.workers.notification_consumer"]
+    command: [ "python", "-m", "app.workers.notification_consumer" ]
     depends_on:
       postgres:
         condition: service_healthy

@@ -29,30 +29,45 @@ stop_local_postgres_service() {
   fi
 }
 
-if [ -f "${REPO_ROOT}/.env" ]; then
+# Load local .env files only when NOT running inside Docker.
+# Docker Compose already injects the correct environment variables for the container.
+if [ ! -f /.dockerenv ] && [ -f "${REPO_ROOT}/.env" ]; then
   set -a
   # shellcheck disable=SC1090
   source "${REPO_ROOT}/.env"
   set +a
 fi
 
-if [ -f "${SCRIPT_DIR}/.env" ]; then
+if [ ! -f /.dockerenv ] && [ -f "${SCRIPT_DIR}/.env" ]; then
   set -a
   # shellcheck disable=SC1091
   source "${SCRIPT_DIR}/.env"
   set +a
 fi
 
+# Override localhost‑based env vars when running inside Docker.
+# Docker Compose already injects the correct service URLs, so we only set them
+# if they are still unset (or still point to a localhost address).
+if [ -f /.dockerenv ]; then
+  # If REDIS_URL is still pointing to localhost, replace it with the Docker service name.
+  if [[ "$REDIS_URL" == redis://localhost* ]] || [[ -z "$REDIS_URL" ]]; then
+    export REDIS_URL="${REDIS_URL:-redis://redis:6379/0}"
+  fi
+  if [[ "$KAFKA_BOOTSTRAP_SERVERS" == *localhost* ]] || [[ -z "$KAFKA_BOOTSTRAP_SERVERS" ]]; then
+    export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
+  fi
+fi
+
 : "${POSTGRES_DB:=carpooling}"
 : "${POSTGRES_USER:=carpool_user}"
 : "${POSTGRES_PASSWORD:=change_me_postgres}"
 
-# Single-command mode: always use Docker-managed infra endpoints.
+# Single-command mode: use Docker-managed infra endpoints when variables are not already set.
 POSTGRES_HOST="${POSTGRES_HOST:-127.0.0.1}"
-export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}"
-export REDIS_URL="redis://127.0.0.1:6379/0"
-export KAFKA_BOOTSTRAP_SERVERS="127.0.0.1:9092"
-log "Using DB host ${POSTGRES_HOST}, Redis 127.0.0.1:6379, Kafka 127.0.0.1:9092"
+export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}}"
+export REDIS_URL="${REDIS_URL:-redis://redis:6379/0}"
+export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}"
+log "Using DB host ${POSTGRES_HOST}, Redis ${REDIS_URL}, Kafka ${KAFKA_BOOTSTRAP_SERVERS}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required but not installed." >&2

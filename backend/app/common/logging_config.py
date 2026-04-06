@@ -1,6 +1,6 @@
 import logging
 import json
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 
 
 class JSONFormatter(logging.Formatter):

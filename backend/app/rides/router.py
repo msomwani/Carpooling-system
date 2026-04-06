@@ -15,10 +15,15 @@ from app.auth.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/rides", tags=["Rides"])
 
+# Import rate limiter for state‑changing endpoints
+from app.auth.router import limiter
+
 
 @router.post("", response_model=RideResponse)
+@limiter.limit("10/minute")
 def create_ride(
     payload: RideCreateRequest,
+    request: Request,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
@@ -44,6 +49,7 @@ def create_ride(
 
 
 @router.post("/{ride_id}/start", response_model=RideResponse)
+@limiter.limit("10/minute")
 def start_ride(
     ride_id: str,
     payload: RideLocationRequest,
@@ -73,8 +79,9 @@ def start_ride(
 
 
 @router.post("/{ride_id}/complete", response_model=RideResponse)
+@limiter.limit("10/minute")
 
-# Endpoint for driver to send periodic location updates (used for arrival alerts)
+# Endpoint for driver to complete a ride
 def complete_ride(
     ride_id: str,
     payload: RideLocationRequest,
@@ -104,6 +111,7 @@ def complete_ride(
 
 
 @router.post("/{ride_id}/cancel", response_model=RideResponse)
+@limiter.limit("10/minute")
 def cancel_ride(
     ride_id: str,
     request: Request,

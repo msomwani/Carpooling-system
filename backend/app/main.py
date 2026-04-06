@@ -63,6 +63,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "frame-ancestors 'none'",
         ]
         response.headers["Content-Security-Policy"] = "; ".join(csp_blocks)
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
 
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -144,4 +145,20 @@ async def generic_exception_handler(request, exc):
     import logging
 
     logging.error(f"Unhandled exception: {exc}", exc_info=exc)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    response = JSONResponse(
+        status_code=500, content={"detail": "Internal server error"}
+    )
+    # Add CORS headers to error responses
+    # Use the request's origin if it's in the allowed list; browsers reject comma-separated origins with credentials.
+    origin = request.headers.get("Origin")
+    allowed_origins = settings.cors_origins
+    if origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+    elif settings.environment != "production" and origin:
+        # In non-production, be more flexible to aid debugging cross-origin issues
+        response.headers["Access-Control-Allow-Origin"] = origin
+    
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = ", ".join(settings.cors_allow_methods)
+    response.headers["Access-Control-Allow-Headers"] = ", ".join(settings.cors_allow_headers)
+    return response

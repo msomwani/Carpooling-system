@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
+# Import rate limiter for state‑changing endpoints
+from app.auth.router import limiter
+
 
 @router.get("/my", response_model=list[MyBookingResponse])
 def get_my_bookings(
@@ -38,7 +41,7 @@ def get_my_bookings(
         .order_by(Booking.created_at.desc())
         .all()
     )
-    
+
     for booking, ride in results:
         RideService.reconcile_overdue_ride(db, ride)
         db.refresh(booking)
@@ -65,10 +68,8 @@ def get_my_bookings(
     ]
 
 
-
-
-
 @router.post("", response_model=BookingResponse)
+@limiter.limit("10/minute")
 def create_booking(
     payload: BookingCreateRequest,
     request: Request,
@@ -112,6 +113,7 @@ def create_booking(
 
 
 @router.post("/{booking_id}/ready", response_model=BookingResponse)
+@limiter.limit("10/minute")
 def mark_ready_for_pickup(
     booking_id: str,
     request: Request,
@@ -132,6 +134,7 @@ def mark_ready_for_pickup(
 
 
 @router.post("/{booking_id}/board", response_model=BookingResponse)
+@limiter.limit("10/minute")
 def board_booking(
     booking_id: str,
     payload: BookingBoardRequest,
@@ -156,6 +159,7 @@ def board_booking(
 
 
 @router.post("/{booking_id}/confirm-boarding", response_model=BookingResponse)
+@limiter.limit("10/minute")
 def confirm_boarding(
     booking_id: str,
     request: Request,
@@ -176,6 +180,7 @@ def confirm_boarding(
 
 
 @router.post("/{booking_id}/cancel")
+@limiter.limit("10/minute")
 def cancel_booking(
     booking_id: str,
     request: Request,
@@ -237,11 +242,14 @@ def get_booking_history(
         for row in rows
     ]
 
+
 @router.get("/status/{ride_id}", response_model=BookingStatusResponse)
 def get_booking_status(
     ride_id: str,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    status_payload = BookingService.get_booking_status(db, ride_id=ride_id, passenger_id=user_id)
+    status_payload = BookingService.get_booking_status(
+        db, ride_id=ride_id, passenger_id=user_id
+    )
     return BookingStatusResponse(**status_payload)

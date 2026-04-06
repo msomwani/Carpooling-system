@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from "react"
+import React, { createContext, useContext, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 
 interface User {
@@ -41,6 +41,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
+    // ----- Global fetch interceptor for JWT refresh -----
+    // Save the original fetch function so we can restore it later and also use it inside logout.
+    const original = window.fetch.bind(window)
+    // Expose the original fetch to the logout function via the ref.
+    originalFetchRef.current = original
+    // Use a ref to hold the refresh promise so we only have one in‑flight request.
+    let refreshPromise: Promise<void> | null = null
+    // Helper to decide whether we should attach credentials.
+    const shouldAddCredentials = (url: string): boolean => {
+      // Only add credentials for our own API calls (relative paths or API_URL base).
+      return url.startsWith('/') || url.startsWith(API_URL)
+    }
+    // @ts-ignore – we are monkey‑patching the global fetch.
+    window.fetch = async (input: RequestInfo, init: RequestInit = {}): Promise<Response> => {
+      // Resolve the URL string for later checks.
+      const url = typeof input === 'string' ? input : input.url
+
+      // Bypass interceptor for logout endpoint to avoid deadlock.
+      if (url.endsWith('/auth/logout')) {
+        return original(input, init)
+      }
+
+      // Attach credentials only for our own API endpoints.
+      if (shouldAddCredentials(url)) {
+        init.credentials = "include"
+      }
+
+      let response = await original(input, init)
+
+      // If we get a 401 on our own API (but not on the refresh endpoint), try to refresh the token.
+      if (response.status === 401 && shouldAddCredentials(url) && !url.endsWith('/auth/refresh-token')) {
+        // Ensure only a single refresh request runs at a time.
+        if (!refreshPromise) {
+          refreshPromise = (async () => {
+            try {
+              const refreshRes = await original(`${API_URL}/auth/refresh-token`, {
+                method: "POST",
+                // Credentials already needed for the refresh endpoint.
+                credentials: "include",
+              })
+              if (!refreshRes.ok) {
+                // Refresh failed – log the user out.
+                logout()
+                return
+              }
+              // Refresh succeeded – nothing else to do here.
+            } catch {
+              // Network or other error – also log out.
+              logout()
+            } finally {
+              // Reset for next possible refresh.
+              refreshPromise = null
+            }
+          })()
+        }
+        // Wait for the refresh to finish before retrying.
+        await refreshPromise
+        // Retry the original request after a successful refresh.
+        response = await original(input, init)
+      }
+      return response
+    }
+    // Cleanup on unmount: restore original fetch.
+    return () => {
+      // @ts-ignore
+      window.fetch = original
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /** Called after a successful Google login. Stores only public user info; token is in the cookie. */
@@ -49,16 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(userData)
   }
 
+  // Store a reference to the *original* fetch function so we can bypass the interceptor when needed.
+  const originalFetchRef = React.useRef<(input: RequestInfo, init?: RequestInit) => Promise<Response>>(() => Promise.reject());
+
   const logout = async () => {
-    // Tell the server to expire the HTTP-only cookie.
-    // JavaScript cannot delete HTTP-only cookies itself — the server must do it.
+    // Tell the server to expire the HTTP-only cookie using the *original* fetch to avoid the interceptor.
     try {
-      await fetch(`${API_URL}/auth/logout`, {
+      await originalFetchRef.current(`${API_URL}/auth/logout`, {
         method: "POST",
-        credentials: "include", // required to send/receive cookies cross-origin
+        credentials: "include",
       })
     } catch {
-      // Best-effort — proceed with local cleanup even if the request fails.
+      // Best‑effort – continue with local cleanup even if the request fails.
     }
     localStorage.removeItem(USER_KEY)
     setUser(null)
