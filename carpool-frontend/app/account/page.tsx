@@ -471,8 +471,9 @@ export default function AccountPage() {
                       {isEditing ? (
                         <Input
                           value={field.value}
+                          readOnly={field.key === "email"}
                           onChange={(e) => setProfile({ ...profile, [field.key]: e.target.value })}
-                          className="h-8 border-none bg-transparent p-0 text-sm font-bold focus-visible:ring-0"
+                          className={`h-8 border-none bg-transparent p-0 text-sm font-bold focus-visible:ring-0 ${field.key === "email" ? "text-muted-foreground/50 cursor-not-allowed" : ""}`}
                         />
                       ) : (
                         <p className="text-sm font-bold">{field.value || "Not Provided"}</p>

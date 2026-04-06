@@ -1,368 +1,112 @@
+<div align="center">
+  <h1>🐊 Croc Ride</h1>
+  <p>A Correctness-First, Community-Driven Carpooling Platform focused on the Vadodara-Halol Corridor.</p>
+</div>
 
-# Carpooling System (Vadodara-Halol Focus)
+---
 
-A production-inspired, modular monolith carpooling platform focused on the Vadodara (Baroda) to Halol corridor.
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li><a href="#about-the-project">About The Project</a></li>
+    <li><a href="#key-features">Key Features</a></li>
+    <li><a href="#system-architecture">System Architecture</a></li>
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#project-structure">Project Structure</a></li>
+    <li><a href="#development-roadmap">Development Roadmap</a></li>
+  </ol>
+</details>
 
-This project emphasizes correctness, concurrency safety, and reliable distributed workflows, while evolving toward corridor-specific product features, payments, and frontend applications.
+## About The Project
 
-## Problem We Are Solving
+**Croc Ride** is a dedicated carpooling application built specifically for repeat, daily commuters traveling along the high-traffic Vadodara (Baroda) to Halol corridor. 
 
-Daily commuters on the Vadodara-Halol route need travel that is:
+Unlike traditional taxi-hailing applications that optimize for instantaneous ad-hoc trips, Croc Ride is designed around **cost-sharing and community trust**. Our goal is to connect individuals driving empty cars with passengers heading precisely on their route. 
 
-- affordable
-- reliable for repeated daily use
-- better coordinated than ad-hoc ride finding
+The system started as an experimental concept to handle advanced **Geospatial routing** and **High-Concurrency Seat Booking** safely, and has since matured into a production-inspired, containerized platform.
 
-Existing mobility options are available, but this project targets a route-specific pooling experience for repeat commuters.
+## Key Features
 
-## Project Goals
+- 📍 **Advanced Spatial Search**: Instead of just matching pickup-to-pickup, the system maps the driver's exact journey as a continuous geometric line (`LineString`) and matches passengers standing anywhere along that route.
+- 🚦 **Smart Corridor Geocoding**: Native support for searching colloquial route landmarks (e.g., "Airport", "Station") which are converted instantly into exact geospatial coordinates.
+- 🚗 **Multi-Vehicle Management**: Drivers can maintain a virtual garage of their vehicles and toggle between them prior to creating shared rides.
+- 🔒 **Race-Condition-Proof Bookings**: Relying deeply on PostgreSQL's row-level locking (`SELECT FOR UPDATE`), the platform guarantees that in a split-second race between 10 passengers for 1 remaining seat, exactly one person gets the booking without data corruption.
+- 🛡️ **Frictionless Google OAuth**: Clean, spam-free onboarding configured exclusively through `@react-oauth/google` with strict, stateless backend cookie session validation.
 
-- strong transactional guarantees
-- concurrency-safe booking logic
-- idempotent API design
-- event-driven architecture
-- reliable event delivery via Outbox pattern
-- failure-aware system design
+## System Architecture
 
-## Current Project Status (Already Done)
+We employ a **Modular Monolith** architecture. While microservices offer scaling patterns, keeping domains bound in a single codebase with clean folder separation achieves immense developer velocity while preserving strict transactional ACID guarantees.
 
-### Backend Core
+- **Frontend Web**: Next.js (App Router), Tailwind CSS, Leaflet Maps, OSRM Routing.
+- **Backend Core**: Python, FastAPI.
+- **Source of Truth**: PostgreSQL + PostGIS (Mandatory for our geometric routing math).
+- **Speed Layer**: Redis (Caching frequent searches and tracking driver locations).
+- **Asynchronous Reliability**: Apache Kafka.
+- **The Delivery Guarantee**: We utilize the **Outbox Pattern**. Booking events are written into an `outbox_events` table in the exact same database transaction as the booking itself. A background worker picks this up to fire off to Kafka. This guarantees we never lose an event if external services drop temporarily.
 
-- FastAPI modular monolith architecture
-- PostgreSQL-backed transactional core flows
-- Redis caching for ride search
-- Kafka with Outbox pattern for reliable async events
-- JWT authentication with HTTP-only cookie sessions
-- Google Maps integration for coordinate-based ride creation and geo-search
+## Getting Started
 
-### Business Flows
+Because of our reliance on Kafka, Redis, and PostGIS, the easiest way to run the platform locally is via Docker.
 
-- user signup and login
-- **email OTP verification** (AWS SES)
-- **Google OAuth (Sign in with Google)**
-- driver ride creation
-- rider ride search (text-based and geo-based nearby search)
-- coordinate-based ride creation via Google Maps
-- booking creation
-- booking cancellation
-- booking history endpoint
-- analytics overview endpoint
+### Prerequisites
+- Docker & Docker Compose Desktop
 
-### Reliability and Correctness
+### Local Installation
 
-- concurrency-safe seat booking (`SELECT FOR UPDATE`)
-- idempotency support for booking retries
-- event-driven side-effect architecture
-- consumer idempotency handling
-- health, readiness, and metrics endpoints
+1. **Configure Environment Variables**
+   Create a `.env` in the root directory referencing your API Keys:
+   ```env
+   GOOGLE_CLIENT_ID=your_google_oauth_client_id
+   JWT_SECRET=your_strong_secret
+   POSTGRES_USER=postgres
+   POSTGRES_PASSWORD=postgres
+   POSTGRES_DB=carpool_db
+   ```
 
-### Testing
+2. **Spin Up the Infra**
+   Deploy the entire 9-container stack (Database, Cache, Message Brokers, Event Workers, APIs, and Frontend) in one command:
+   ```bash
+   docker compose up -d --build
+   ```
 
-- unit tests
-- integration tests
-- concurrency and race-condition tests
-- API endpoint tests
+3. **Access the App**
+   - **Frontend App:** [http://localhost:3000](http://localhost:3000)
+   - **Backend Server / API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
 
-## Current Focus (In Progress)
-
-### Product Direction
-
-- corridor-first experience for Vadodara-Halol commuters
-- scheduled and recurring commute pooling
-- trust and reliability features for daily riders and drivers
-
-### Payment Direction
-
-- platform-managed payment flow for commitment and settlement
-- fixed driver-side commitment model
-- rider fare based on distance slabs
-- faster payout and refund processing after ride outcome
-
-## Future Roadmap
-
-### Phase 1: Corridor Operations
-
-- predefined corridor stops
-- distance slab pricing engine
-- trip lifecycle states (`start`, `complete`, `cancel`)
-- penalty and refund policy automation
-
-### Phase 2: Payments and Settlement
-
-- UPI payment integration
-- escrow-style transaction tracking
-- driver payout and refund orchestration
-- payment ledger and reconciliation tools
-
-### Phase 3: Frontend (Major Future Focus)
-
-- rider application UI/UX (web/mobile)
-- driver application UI/UX (web/mobile)
-- corridor slot-based booking interface
-- real-time trip status and settlement visibility
-- OTP-first onboarding journey
-
-### Phase 4: Scale and Trust
-
-- advanced notifications (SMS/WhatsApp/push)
-- dispute handling workflows
-- operational dashboards and monitoring
-- partnership-led growth expansion
-
-## Architecture Overview
-
-### Architecture Style: Modular Monolith
-
-Chosen for:
-
-- clear domain boundaries
-- strong ACID guarantees
-- operational simplicity
-- evolution path toward microservices
-
-![System Overview](docs/architecture/01_system_overview.png)
+## Project Structure
 
 ```text
-[ Client ]
-     |
-[ FastAPI Application ]
-     |
-[ PostgreSQL ]  <- Source of Truth
-     |
-[ Outbox Table ]
-     |
-[ Outbox Worker ]
-     |
-[ Kafka ]
-     |
-[ Consumers ]
+Croc Ride/
+├── backend/                  # FastAPI Application
+│   ├── app/
+│   │   ├── users/            # Profiles, Vehicles, Role Hierarchy
+│   │   ├── rides/            # Ride Creation & Geospatial Algorithms
+│   │   ├── bookings/         # Transaction-safe seat reservations
+│   │   ├── auth/             # Google OAuth & JWT handler APIs
+│   │   └── workers/          # Background Kafka Workers (Outbox Polling)
+│   └── ...
+├── carpool-frontend/         # Next.js Application
+│   ├── app/                  # Next.js Server Components & Pages
+│   ├── components/           # Reusable UI (Leaflet Maps, Shadcn) 
+│   └── lib/                  # AuthContext Providers and fetchers
+└── docker-compose.yml        # Docker orchestration configuration
 ```
 
-## Core Design Philosophy
-
-### PostgreSQL = Source of Truth
-
-All critical business logic executes inside ACID transactions.
-
-### Redis = Performance Layer
-
-Used for read-through caching and performance optimization for ride search.
-
-### Kafka = Asynchronous Side Effects
-
-Used to decouple side effects (notifications, analytics, history) from core booking transactions.
-
-### Outbox Pattern = Guaranteed Event Delivery
-
-Events are written inside the same DB transaction and published asynchronously by a worker to avoid silent event loss.
-
-### JWT = Stateless Authentication
-
-Authentication is handled through HTTP-only cookie-based JWT sessions.
-
-## System Modules
-
-```text
-app/
-├── auth/        -> authentication and JWT
-├── users/       -> user management
-├── rides/       -> ride creation, text search, and geo-based nearby search
-├── bookings/    -> booking lifecycle and idempotency
-├── maps/        -> Google Maps API key endpoint
-├── static/      -> frontend UI (maps.html)
-├── outbox/      -> durable event storage
-├── events/      -> consumer idempotency tracking
-├── notifications/ -> notification attempt tracking
-├── analytics/   -> KPI API
-├── common/      -> DB, Redis, Kafka, metrics, middleware
-├── config/      -> environment configuration
-
-workers/
-├── outbox_processor.py
-├── booking_consumer.py
-```
-
-## Implemented Features
-
-### Authentication
-
-- signup with email OTP verification (does not log in until OTP is confirmed)
-- Google OAuth — Sign in with Google (auto-creates account, skips OTP)
-- password hashing
-- JWT-based sessions
-- HTTP-only cookies
-- protected endpoints via dependency injection
-- login rejected for unverified accounts
-
-### Ride Management
-
-- drivers create rides with optional GPS coordinates
-- passengers search rides by text or by geo-proximity (Haversine)
-- indexed DB queries (text + coordinate indexes)
-- Redis-backed caching
-
-### Google Maps Integration
-
-- Interactive map UI for picking source/destination coordinates
-- Google Places Autocomplete for location search
-- `GET /rides/nearby` geo-search using Haversine distance formula
-- API key served securely from backend config
-- Dark-themed map interface at `/static/maps.html`
-
-### Transaction-Safe Booking
-
-- ACID transactions
-- `SELECT FOR UPDATE` row-level locking
-- overbooking prevention under concurrency
-
-### Idempotent Booking APIs
-
-- unique idempotency keys
-- concurrency-safe insert handling
-- safe retries
-- DB-level uniqueness constraints
-
-### Booking Cancellation
-
-- transactional seat restoration
-- compensating event emission
-- cache invalidation after cancellation
-
-### Event System and Reliability
-
-Events:
-
-- `booking.confirmed`
-- `booking.cancelled`
-- `booking.dlq`
-
-Reliability:
-
-- producer retries
-- consumer retry strategy with DLQ
-- outbox-backed crash-safe publishing
-
-## Failure Handling
-
-- app crash during transaction -> automatic rollback
-- duplicate booking request -> prevented by idempotency key
-- Kafka publish failure -> retried via outbox worker
-- consumer processing failure -> retry with DLQ fallback
-
-## Current API Surface
-
-### System
-
-- `GET /healthz`
-- `GET /readyz`
-- `GET /metrics`
-
-### Auth
-
-- `POST /auth/signup` (creates account, sends OTP email)
-- `POST /auth/verify-otp` (verifies OTP, sets JWT cookie)
-- `POST /auth/resend-otp` (resends OTP)
-- `POST /auth/login` (email+password, rejects unverified accounts)
-- `POST /auth/google` (Google ID token → login or auto-register)
-
-### Rides
-
-- `POST /rides/` (supports optional `source_lat`, `source_lng`, `destination_lat`, `destination_lng`)
-- `GET /rides/?source=...&destination=...`
-- `GET /rides/nearby?lat=...&lng=...&radius_km=10&role=source` (geo-search)
-
-### Maps
-
-- `GET /maps/api-key` (returns Google Maps API key for frontend)
-
-### Bookings
-
-- `POST /bookings/` (requires `Idempotency-Key`)
-- `POST /bookings/{booking_id}/cancel`
-- `GET /bookings/history`
-
-### Analytics
-
-- `GET /analytics/overview?days=30`
-
-## Local Setup
-
-### 0) Configure environment variables
-
-Add the following to `backend/.env` (and root `.env` for docker-compose):
-
-```env
-GOOGLE_MAPS_API_KEY=your_google_maps_key
-SMTP_SERVER=email-smtp.your-region.amazonaws.com
-SMTP_PORT=587
-SMTP_USERNAME=your_ses_smtp_username
-SMTP_PASSWORD=your_ses_smtp_password
-SMTP_FROM_EMAIL=noreply@yourdomain.com
-GOOGLE_CLIENT_ID=your_google_oauth_client_id
-```
-
-Required Google Cloud APIs: **Maps JavaScript API**, **Places API**, **Google Identity Services**.
-
-### 1) Start full stack (infra + backend services)
-
-```bash
-docker compose up -d --build
-```
-
-Starts PostgreSQL, Redis, Zookeeper, Kafka, API server, outbox worker, and booking consumer.
-
-### 2) Verify services
-
-```bash
-docker compose ps
-docker compose logs -f app outbox_worker booking_consumer
-```
-
-- API docs: `http://127.0.0.1:8000/docs`
-- Map UI: `http://127.0.0.1:8000/static/maps.html`
-
-### 3) Stop stack
-
-```bash
-docker compose down
-```
-
-### 4) Optional fallback (legacy local runner)
-
-If needed, you can still run the old local script:
-
-```bash
-cd backend
-./start_all.sh
-```
-
-## System Workflow
-
-1. user authenticates
-2. driver creates ride
-3. passenger searches rides
-4. passenger books ride (transaction-safe)
-5. outbox event is written in same transaction
-6. worker publishes event to Kafka
-7. cancellation path emits compensating event
-
-## Non-Goals (Current)
-
-- no microservices split yet (modular monolith by design)
-- no production-grade payment processing yet
-- no full distributed tracing yet
-
-## Tech Stack
-
-- Backend: Python, FastAPI
-- Database: PostgreSQL
-- Cache: Redis
-- Event Streaming: Kafka
-- Maps: Google Maps JavaScript API + Places API
-- Email: AWS SES (SMTP)
-- Auth: JWT (HTTP-only cookies), Google OAuth 2.0
-- Pattern: Modular Monolith + Outbox Pattern
-
-## Why This Project
-
-This system is designed as a correctness-first transportation backend, with practical handling for concurrency, retries, and asynchronous side effects. The next major milestone is converting this backend strength into a full corridor product with production-grade payments and frontend experience.
+## Development Roadmap
+
+Croc Ride is fully operational from an algorithmic routing and booking standpoint, but is continuously improving towards a public release. The current developmental roadmap distinguishes between what is functional and what is queued up:
+
+**✅ Fully Implemented & Functioning:**
+- Stateless JWT Authorization via Google.
+- OSRM Polyline generation & Advanced PostGIS `ST_DWithin` spatial ride matching.
+- Concurrency-safe seat allocation & complex cascading cancellations.
+- `slowapi` rate limiting across dangerous endpoints.
+- Fully dockerized `docker-compose` orchestration.
+
+**⚙️ Payments (Test Mode Active):**
+- **Razorpay Integration**: Our escrow payment gateway is successfully built and holding payments in **Test Mode**. It handles capturing funds and executing automated refunds during user cancellations. We are actively finalizing security audits before pushing it to a live production environment.
+
+**🚧 In the Backlog / Pending:**
+- **Trust & Verification**: Sprints are planned to implement Phone number OTPs, ID-Card Uploads, and mutual ratings to enforce safety.
+- **Automated Alerts**: Transitioning Kafka events to trigger real-time WebSockets and cross-platform SMS (Twilio/MSG91) updates to notify users of ride status changes offline.
+- **Infrastructure Scaling**: Adding production CI pipelines, securing CORS origins, and moving toward domain/SSL implementations.

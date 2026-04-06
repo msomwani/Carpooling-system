@@ -492,7 +492,7 @@ function CreateRideContent() {
                   <Input
                     type="number"
                     min="1"
-                    max="8"
+                    max="7"
                     defaultValue="4"
                     onChange={(e) => setFormData({ ...formData, total_seats: parseInt(e.target.value) })}
                   />

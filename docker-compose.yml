@@ -88,7 +88,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${REDIS_URL:-redis://:YourStrongRedisPassword123!@redis:6379/0}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
@@ -115,7 +115,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${REDIS_URL:-redis://:YourStrongRedisPassword123!@redis:6379/0}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
@@ -140,7 +140,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${REDIS_URL:-redis://:YourStrongRedisPassword123!@redis:6379/0}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
@@ -165,7 +165,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: ${REDIS_URL:-redis://:YourStrongRedisPassword123!@redis:6379/0}
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
@@ -182,6 +182,26 @@ services:
     restart: unless-stopped
     volumes:
       - ./backend/app:/app/backend/app
+
+  frontend:
+    build:
+      context: ./carpool-frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./carpool-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      # Internal URL for Next.js API rewrites
+      - BACKEND_INTERNAL_URL=http://app:8000
+      # Expose backend URL to frontend inside docker network if needed
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - app
+    restart: unless-stopped
 
 volumes:
   postgres_data:

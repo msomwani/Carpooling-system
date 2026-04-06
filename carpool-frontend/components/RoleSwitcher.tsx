@@ -1,6 +1,7 @@
 "use client"
 
 import { useAuth } from "@/lib/AuthContext"
+import { useRole } from "@/lib/RoleContext"
 import { Button } from "@/components/ui/button"
 import { Car, User } from "lucide-react"
 
@@ -8,9 +9,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "/api"
 
 export function RoleSwitcher() {
   const { user, getAuthHeaders } = useAuth()
-  // Read active role from localStorage (managed by RoleContext) — fall back to user.role from DB
-  const storedRole = typeof window !== "undefined" ? localStorage.getItem("user-role") : null
-  const role = (storedRole as "passenger" | "driver") || user?.role || "passenger"
+  const { role } = useRole()
 
   const switchRole = async (newRole: "passenger" | "driver") => {
     // Optimistically update localStorage for instant UI response

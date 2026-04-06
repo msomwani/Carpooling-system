@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Expose the original fetch to the logout function via the ref.
     originalFetchRef.current = original
     // Use a ref to hold the refresh promise so we only have one in‑flight request.
-    let refreshPromise: Promise<void> | null = null
+    let refreshPromise: Promise<boolean> | null = null
     // Helper to decide whether we should attach credentials.
     const shouldAddCredentials = (url: string): boolean => {
       // Only add credentials for our own API calls (relative paths or API_URL base).
@@ -55,8 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     // @ts-ignore – we are monkey‑patching the global fetch.
     window.fetch = async (input: RequestInfo, init: RequestInit = {}): Promise<Response> => {
-      // Resolve the URL string for later checks.
-      const url = typeof input === 'string' ? input : input.url
+      // Resolve the URL string for later checks (handles string, Request, and URL objects).
+      const url = typeof input === 'string' ? input : ('url' in input ? input.url : (input as any).toString())
 
       // Bypass interceptor for logout endpoint to avoid deadlock.
       if (url.endsWith('/auth/logout')) {
@@ -84,12 +84,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               if (!refreshRes.ok) {
                 // Refresh failed – log the user out.
                 logout()
-                return
+                return false
               }
               // Refresh succeeded – nothing else to do here.
+              return true
             } catch {
               // Network or other error – also log out.
               logout()
+              return false
             } finally {
               // Reset for next possible refresh.
               refreshPromise = null
@@ -97,9 +99,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           })()
         }
         // Wait for the refresh to finish before retrying.
-        await refreshPromise
-        // Retry the original request after a successful refresh.
-        response = await original(input, init)
+        const success = await refreshPromise
+        // Retry the original request only after a successful refresh.
+        if (success) {
+          response = await original(input, init)
+        }
       }
       return response
     }
@@ -112,15 +116,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   /** Called after a successful Google login. Stores only public user info; token is in the cookie. */
-  const login = (userData: User) => {
+  const login = React.useCallback((userData: User) => {
     localStorage.setItem(USER_KEY, JSON.stringify(userData))
     setUser(userData)
-  }
+  }, [])
 
   // Store a reference to the *original* fetch function so we can bypass the interceptor when needed.
   const originalFetchRef = React.useRef<(input: RequestInfo, init?: RequestInit) => Promise<Response>>(() => Promise.reject());
 
-  const logout = async () => {
+  const logout = React.useCallback(async () => {
     // Tell the server to expire the HTTP-only cookie using the *original* fetch to avoid the interceptor.
     try {
       await originalFetchRef.current(`${API_URL}/auth/logout`, {
@@ -133,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(USER_KEY)
     setUser(null)
     router.push("/")
-  }
+  }, [router])
 
   /**
    * Returns headers for authenticated API calls.
@@ -142,9 +146,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Instead, callers MUST use `credentials: "include"` in fetch so the browser
    * automatically attaches the cookie to every request.
    */
-  const getAuthHeaders = (): Record<string, string> => {
+  const getAuthHeaders = React.useCallback((): Record<string, string> => {
     return { "Content-Type": "application/json" }
-  }
+  }, [])
 
   return (
     <AuthContext.Provider value={{ user, isLoading, logout, login, getAuthHeaders }}>
