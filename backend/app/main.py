@@ -56,7 +56,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         csp_blocks = [
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net",
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            # FastAPI Swagger UI loads its stylesheet from jsDelivr by default.
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
             "font-src 'self' https://fonts.gstatic.com",
             "img-src * data: blob:",  # Allow images from anywhere (maps, avatars)
             "connect-src 'self' https://accounts.google.com",

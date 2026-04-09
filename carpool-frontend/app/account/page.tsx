@@ -26,7 +26,11 @@ import {
   ChevronRight,
   Plus,
   Trash2,
-  Car
+  Car,
+  Building2,
+  AlertCircle,
+  CheckCircle2,
+  Landmark
 } from "lucide-react"
 
 type AnalyticsRole = "passenger" | "driver"
@@ -77,6 +81,21 @@ type Vehicle = {
   type: string
 }
 
+type PayoutAccount = {
+  is_linked: boolean
+  account_id: string | null
+  account_status?: string
+}
+
+type PayoutForm = {
+  legal_name: string
+  email: string
+  phone: string
+  beneficiary_name: string
+  account_number: string
+  ifsc_code: string
+}
+
 export default function AccountPage() {
   const { user, isLoading, logout, getAuthHeaders } = useAuth()
   const { role } = useRole()
@@ -110,6 +129,21 @@ export default function AccountPage() {
   const [analytics, setAnalytics] = useState<PersonalAnalytics | null>(null)
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false)
   const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+
+  // Payout account state
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount | null>(null)
+  const [isPayoutLoading, setIsPayoutLoading] = useState(false)
+  const [isAddingPayout, setIsAddingPayout] = useState(false)
+  const [payoutError, setPayoutError] = useState<string | null>(null)
+  const [payoutFieldErrors, setPayoutFieldErrors] = useState<Partial<PayoutForm>>({})
+  const [payoutForm, setPayoutForm] = useState<PayoutForm>({
+    legal_name: "",
+    email: "",
+    phone: "",
+    beneficiary_name: "",
+    account_number: "",
+    ifsc_code: "",
+  })
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -145,6 +179,30 @@ export default function AccountPage() {
 
     fetchVehicles()
   }, [user, getAuthHeaders])
+
+  useEffect(() => {
+    if (!user || role !== "driver") return
+
+    const fetchPayoutAccount = async () => {
+      setIsPayoutLoading(true)
+      try {
+        const response = await fetch("/api/payments/payout-account", {
+          headers: getAuthHeaders(),
+          credentials: "include",
+        })
+        if (response.ok) {
+          const data = await response.json()
+          setPayoutAccount(data as PayoutAccount)
+        }
+      } catch (error) {
+        console.error("Failed to fetch payout account:", error)
+      } finally {
+        setIsPayoutLoading(false)
+      }
+    }
+
+    fetchPayoutAccount()
+  }, [user, role, getAuthHeaders])
 
   useEffect(() => {
     if (!user) return
@@ -295,6 +353,95 @@ export default function AccountPage() {
   const handleSave = () => {
     console.log("Profile update requested:", profile)
     setIsEditing(false)
+  }
+
+  // Per-field validators — return null if valid, string if invalid
+  const validators = {
+    legal_name: (v: string) =>
+      v.trim().length < 2 ? "Name must be at least 2 characters" :
+      /[^a-zA-Z\s'.\-]/.test(v) ? "Name must not contain numbers or special characters" : null,
+    phone: (v: string) =>
+      !/^\d{10}$/.test(v) ? "Enter a valid 10-digit Indian mobile number" : null,
+    email: (v: string) =>
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "Enter a valid email address" : null,
+    beneficiary_name: (v: string) =>
+      v.trim().length < 2 ? "Account holder name must be at least 2 characters" :
+      /[^a-zA-Z\s'.\-]/.test(v) ? "Name must not contain numbers or special characters" : null,
+    account_number: (v: string) =>
+      !/^\d{9,18}$/.test(v) ? `Account number must be 9–18 digits (you entered ${v.length})` : null,
+    ifsc_code: (v: string) =>
+      v.length < 11 ? `IFSC must be exactly 11 characters (you entered ${v.length})` :
+      !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(v) ? "Invalid IFSC format — e.g. HDFC0001234 (4 letters, 0, 6 alphanumeric)" : null,
+  }
+
+  const validatePayoutField = (field: keyof PayoutForm, value: string) => {
+    const err = validators[field]?.(value) ?? null
+    setPayoutFieldErrors(prev => ({ ...prev, [field]: err }))
+    return err
+  }
+
+  const hasPayoutFieldErrors = () =>
+    Object.values(payoutFieldErrors).some(Boolean)
+
+  const handleSetupPayout = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPayoutError(null)
+    // Run all validations before submit
+    const errs: Partial<PayoutForm> = {}
+    let hasErr = false
+    for (const key of Object.keys(validators) as (keyof PayoutForm)[]) {
+      const err = validators[key](payoutForm[key])
+      if (err) { errs[key] = err; hasErr = true }
+    }
+    if (hasErr) { setPayoutFieldErrors(errs); return }
+
+    setIsPayoutLoading(true)
+    try {
+      const response = await fetch("/api/payments/payout-account", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          ...payoutForm,
+          legal_name: payoutForm.legal_name.trim(),
+          beneficiary_name: payoutForm.beneficiary_name.trim(),
+          ifsc_code: payoutForm.ifsc_code.toUpperCase(),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        // Surface specific backend error
+        setPayoutError(data.detail || "Failed to link account. Check your details and try again.")
+        return
+      }
+      setPayoutAccount({ is_linked: true, account_id: data.account_id, account_status: "created" })
+      setIsAddingPayout(false)
+      setPayoutFieldErrors({})
+      setPayoutForm({ legal_name: "", email: "", phone: "", beneficiary_name: "", account_number: "", ifsc_code: "" })
+    } catch {
+      setPayoutError("Network error — could not reach the server. Please check your connection and try again.")
+    } finally {
+      setIsPayoutLoading(false)
+    }
+  }
+
+  const handleRemovePayoutAccount = async () => {
+    setIsPayoutLoading(true)
+    setPayoutError(null)
+    try {
+      const response = await fetch("/api/payments/payout-account", {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      })
+      if (response.ok) {
+        setPayoutAccount({ is_linked: false, account_id: null })
+      }
+    } catch {
+      setPayoutError("Failed to remove account.")
+    } finally {
+      setIsPayoutLoading(false)
+    }
   }
 
   const validateLicensePlate = (plate: string) => {
@@ -621,6 +768,250 @@ export default function AccountPage() {
             )}
           </div>
         </section>
+
+        {/* Section 4: Payout Settings — drivers only */}
+        {role === "driver" && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-2">
+              <div>
+                <h2 className="text-xl font-black tracking-tight">Payout Settings</h2>
+                <p className="text-muted-foreground text-xs font-medium">Your bank account for ride earnings</p>
+              </div>
+              {!isAddingPayout && !payoutAccount?.is_linked && (
+                <Button
+                  onClick={() => {
+                    setPayoutForm({ legal_name: profile.name, email: profile.email, phone: profile.phone, beneficiary_name: profile.name, account_number: "", ifsc_code: "" })
+                    setIsAddingPayout(true)
+                    setPayoutError(null)
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 rounded-full text-xs font-bold text-primary hover:bg-primary/5"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Set Up
+                </Button>
+              )}
+            </div>
+
+            {/* Linked State */}
+            {payoutAccount?.is_linked && (
+              <Card className="rounded-[2rem] border-none shadow-sm bg-background overflow-hidden">
+                <div className="p-6 space-y-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center">
+                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-black tracking-tight">Bank Account Linked</p>
+                        <Badge variant="secondary" className="bg-green-500/10 text-green-600 border-none font-bold px-2 py-0 rounded-full text-[9px] uppercase tracking-wider">
+                          {payoutAccount.account_status === "activated" ? "Active" : "Pending Verification"}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] font-bold text-muted-foreground font-mono mt-0.5">
+                        {payoutAccount.account_id}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemovePayoutAccount}
+                      disabled={isPayoutLoading}
+                      className="h-8 rounded-xl text-[10px] font-bold text-destructive/60 hover:text-destructive hover:bg-destructive/5"
+                    >
+                      {isPayoutLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Remove"}
+                    </Button>
+                  </div>
+                  <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-amber-600">
+                      Razorpay will verify your bank account via penny drop (₹1 transfer). This may take a few minutes.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Not linked state */}
+            {!payoutAccount?.is_linked && !isAddingPayout && (
+              <Card className="rounded-[2rem] border border-dashed border-muted-foreground/20 bg-muted/5">
+                <div className="p-8 text-center">
+                  {isPayoutLoading ? (
+                    <Loader2 className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3 animate-spin" />
+                  ) : (
+                    <>
+                      <Landmark className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
+                      <p className="text-muted-foreground text-xs font-medium">No payout account linked</p>
+                      <p className="text-muted-foreground/60 text-[10px] font-medium mt-1">Required to create rides and receive earnings</p>
+                    </>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {/* Add payout account form */}
+            {isAddingPayout && (
+              <Card className="rounded-[2rem] border-2 border-primary/20 shadow-sm bg-background p-6 animate-in zoom-in-95 duration-200">
+                <form onSubmit={handleSetupPayout} className="space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <Building2 className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-black">Link Bank Account</p>
+                      <p className="text-[10px] text-muted-foreground font-medium">Verified via Razorpay Route — your earnings are secure</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Legal Name</Label>
+                      <Input
+                        id="payout-legal-name"
+                        placeholder="As on PAN card"
+                        value={payoutForm.legal_name}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/[^a-zA-Z\s'.\-]/g, "")
+                          setPayoutForm({ ...payoutForm, legal_name: v })
+                          validatePayoutField("legal_name", v)
+                        }}
+                        className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none ${payoutFieldErrors.legal_name ? "border-destructive" : ""}`}
+                        maxLength={100}
+                        required
+                      />
+                      {payoutFieldErrors.legal_name && <p className="text-[9px] text-destructive font-bold ml-1">{payoutFieldErrors.legal_name}</p>}
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Phone</Label>
+                      <Input
+                        id="payout-phone"
+                        placeholder="10-digit mobile"
+                        value={payoutForm.phone}
+                        inputMode="numeric"
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, "").slice(0, 10)
+                          setPayoutForm({ ...payoutForm, phone: v })
+                          validatePayoutField("phone", v)
+                        }}
+                        className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none ${payoutFieldErrors.phone ? "border-destructive" : ""}`}
+                        maxLength={10}
+                        required
+                      />
+                      {payoutFieldErrors.phone && <p className="text-[9px] text-destructive font-bold ml-1">{payoutFieldErrors.phone}</p>}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Email for Razorpay</Label>
+                    <Input
+                      id="payout-email"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={payoutForm.email}
+                      onChange={(e) => {
+                        setPayoutForm({ ...payoutForm, email: e.target.value })
+                        validatePayoutField("email", e.target.value)
+                      }}
+                      className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none ${payoutFieldErrors.email ? "border-destructive" : ""}`}
+                      maxLength={255}
+                      required
+                    />
+                    {payoutFieldErrors.email && <p className="text-[9px] text-destructive font-bold ml-1">{payoutFieldErrors.email}</p>}
+                  </div>
+
+                  <div className="border-t border-muted/30 pt-4 space-y-3">
+                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest px-1">Bank Details</p>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Account Holder Name</Label>
+                      <Input
+                        id="payout-beneficiary-name"
+                        placeholder="Exactly as on your bank passbook"
+                        value={payoutForm.beneficiary_name}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/[^a-zA-Z\s'.\-]/g, "")
+                          setPayoutForm({ ...payoutForm, beneficiary_name: v })
+                          validatePayoutField("beneficiary_name", v)
+                        }}
+                        className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none ${payoutFieldErrors.beneficiary_name ? "border-destructive" : ""}`}
+                        maxLength={100}
+                        required
+                      />
+                      {payoutFieldErrors.beneficiary_name && <p className="text-[9px] text-destructive font-bold ml-1">{payoutFieldErrors.beneficiary_name}</p>}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">Account Number</Label>
+                        <Input
+                          id="payout-account-number"
+                          placeholder="9–18 digits"
+                          value={payoutForm.account_number}
+                          inputMode="numeric"
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/\D/g, "").slice(0, 18)
+                            setPayoutForm({ ...payoutForm, account_number: v })
+                            validatePayoutField("account_number", v)
+                          }}
+                          className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none ${payoutFieldErrors.account_number ? "border-destructive" : ""}`}
+                          maxLength={18}
+                          required
+                        />
+                        {payoutFieldErrors.account_number
+                          ? <p className="text-[9px] text-destructive font-bold ml-1">{payoutFieldErrors.account_number}</p>
+                          : <p className="text-[9px] text-muted-foreground ml-1">{payoutForm.account_number.length}/18 digits used</p>
+                        }
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-black text-muted-foreground uppercase tracking-widest ml-1">IFSC Code</Label>
+                        <Input
+                          id="payout-ifsc"
+                          placeholder="HDFC0001234"
+                          value={payoutForm.ifsc_code}
+                          onChange={(e) => {
+                            const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11)
+                            setPayoutForm({ ...payoutForm, ifsc_code: val })
+                            validatePayoutField("ifsc_code", val)
+                          }}
+                          className={`rounded-xl h-10 border-muted/30 focus-visible:ring-primary shadow-none uppercase ${payoutFieldErrors.ifsc_code ? "border-destructive" : ""}`}
+                          maxLength={11}
+                          required
+                        />
+                        {payoutFieldErrors.ifsc_code
+                          ? <p className="text-[9px] text-destructive font-bold ml-1">{payoutFieldErrors.ifsc_code}</p>
+                          : <p className="text-[9px] text-muted-foreground ml-1">{payoutForm.ifsc_code.length}/11 characters</p>
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* API-level error (from backend / network) */}
+                  {payoutError && (
+                    <div className="flex items-start gap-2 bg-destructive/5 border border-destructive/10 rounded-xl p-3">
+                      <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0 mt-0.5" />
+                      <p className="text-[10px] font-bold text-destructive">{payoutError}</p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 pt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="flex-1 rounded-xl h-11 text-xs font-bold"
+                      onClick={() => { setIsAddingPayout(false); setPayoutError(null); setPayoutFieldErrors({}) }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="flex-1 rounded-xl h-11 text-xs font-bold"
+                      disabled={isPayoutLoading || hasPayoutFieldErrors()}
+                    >
+                      {isPayoutLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Link Bank Account"}
+                    </Button>
+                  </div>
+                </form>
+              </Card>
+            )}
+          </section>
+        )}
 
         {/* Logout Button - Positioned above nav bar area */}
         <div className="pt-4">

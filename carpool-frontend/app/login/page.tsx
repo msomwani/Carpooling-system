@@ -34,6 +34,13 @@ export default function LoginPage() {
       const idToken = credentialResponse.credential
       if (!idToken) throw new Error("No credential received from Google")
 
+      // Temporary debug hook so we can copy the Google ID token for Swagger screenshots.
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("debug_google_id_token", idToken)
+        ;(window as Window & { __debugGoogleIdToken?: string }).__debugGoogleIdToken = idToken
+        console.log("Google ID token:", idToken)
+      }
+
       // Sync with our FastAPI backend — sends the Google id_token for verification
       const syncRes = await fetch(`${API_URL}/auth/sync-google-user`, {
         method: "POST",

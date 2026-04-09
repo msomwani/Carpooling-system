@@ -40,7 +40,7 @@ We employ a **Modular Monolith** architecture. While microservices offer scaling
 - **Frontend Web**: Next.js (App Router), Tailwind CSS, Leaflet Maps, OSRM Routing.
 - **Backend Core**: Python, FastAPI.
 - **Source of Truth**: PostgreSQL + PostGIS (Mandatory for our geometric routing math).
-- **Speed Layer**: Redis (Caching frequent searches and tracking driver locations).
+- **Speed Layer**: Redis (Caching frequent ride searches and enforcing rate limiting on all state-changing API endpoints).
 - **Asynchronous Reliability**: Apache Kafka.
 - **The Delivery Guarantee**: We utilize the **Outbox Pattern**. Booking events are written into an `outbox_events` table in the exact same database transaction as the booking itself. A background worker picks this up to fire off to Kafka. This guarantees we never lose an event if external services drop temporarily.
 
@@ -58,10 +58,16 @@ Because of our reliance on Kafka, Redis, and PostGIS, the easiest way to run the
    ```env
    GOOGLE_CLIENT_ID=your_google_oauth_client_id
    JWT_SECRET=your_strong_secret
-   POSTGRES_USER=postgres
-   POSTGRES_PASSWORD=postgres
-   POSTGRES_DB=carpool_db
+   POSTGRES_USER=your_postgres_user
+   POSTGRES_PASSWORD=your_strong_postgres_password
+   POSTGRES_DB=carpooling_db
+   REDIS_PASSWORD=your_strong_redis_password
+   REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+   RAZORPAY_KEY_ID=your_razorpay_key_id
+   RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+   NEXT_PUBLIC_RAZORPAY_KEY_ID=your_razorpay_key_id
    ```
+   > See `.env.example` for the full reference with all required keys.
 
 2. **Spin Up the Infra**
    Deploy the entire 9-container stack (Database, Cache, Message Brokers, Event Workers, APIs, and Frontend) in one command:
@@ -97,11 +103,13 @@ Croc Ride/
 Croc Ride is fully operational from an algorithmic routing and booking standpoint, but is continuously improving towards a public release. The current developmental roadmap distinguishes between what is functional and what is queued up:
 
 **✅ Fully Implemented & Functioning:**
-- Stateless JWT Authorization via Google.
-- OSRM Polyline generation & Advanced PostGIS `ST_DWithin` spatial ride matching.
-- Concurrency-safe seat allocation & complex cascading cancellations.
-- `slowapi` rate limiting across dangerous endpoints.
-- Fully dockerized `docker-compose` orchestration.
+- Google OAuth for identity verification + stateless JWT session management stored in HTTP-Only cookies (never exposed to JavaScript).
+- OSRM Polyline generation & Advanced PostGIS `ST_DWithin` spatial ride matching (proximity-based to pickup point).
+- Concurrency-safe seat allocation via PostgreSQL `SELECT FOR UPDATE` row-level locking.
+- Fraud-proof boarding flow — passenger must confirm presence ("I'm Here") before driver can mark them as boarded.
+- Automated ride reconciliation — missed-start auto-refunds and 6-hour auto-completion via lazy reconciliation on every request.
+- `slowapi` rate limiting on all state-changing endpoints, backed by Redis.
+- Fully dockerized 9-service `docker-compose` orchestration (Frontend, Backend, Postgres, Redis, Kafka, Zookeeper, 3 Workers).
 
 **⚙️ Payments (Test Mode Active):**
 - **Razorpay Integration**: Our escrow payment gateway is successfully built and holding payments in **Test Mode**. It handles capturing funds and executing automated refunds during user cancellations. We are actively finalizing security audits before pushing it to a live production environment.

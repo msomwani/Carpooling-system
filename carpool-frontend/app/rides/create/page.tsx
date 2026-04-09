@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, ArrowLeft, MapPin, Calendar, Users, Car } from "lucide-react"
+import { Loader2, ArrowLeft, MapPin, Calendar, Users, Car, Landmark } from "lucide-react"
 import { useAuth } from "@/lib/AuthContext"
 import "leaflet/dist/leaflet.css"
 import dynamic from "next/dynamic"
@@ -47,6 +47,7 @@ function CreateRideContent() {
 
   const [vehicles, setVehicles] = useState<any[]>([])
   const [selectedVehicleId, setSelectedVehicleId] = useState("")
+  const [payoutLinked, setPayoutLinked] = useState<boolean | null>(null)
   const [routeGeometry, setRouteGeometry] = useState<any>(null)
   const [selectionMode, setSelectionMode] = useState<"source" | "destination">("source")
   const [showSourceDropdown, setShowSourceDropdown] = useState(false)
@@ -86,6 +87,21 @@ function CreateRideContent() {
       }
     }
     fetchVehicles()
+
+    const fetchPayoutStatus = async () => {
+      try {
+        const res = await fetch("/api/payments/payout-account", { headers: getAuthHeaders(), credentials: "include" })
+        if (res.ok) {
+          const data = await res.json()
+          setPayoutLinked(data.is_linked === true)
+        } else {
+          setPayoutLinked(false)
+        }
+      } catch {
+        setPayoutLinked(false)
+      }
+    }
+    fetchPayoutStatus()
 
     // Check for query params to pre-fill
     const pSource = searchParams.get("source")
@@ -538,7 +554,21 @@ function CreateRideContent() {
                   )}
                 </div>
 
-                <Button type="submit" disabled={isLoading || !selectedVehicleId} className="w-full h-12 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-[0.98]">
+                {/* Payout Account Gate */}
+                {payoutLinked === false && (
+                  <div className="p-4 rounded-xl border-2 border-dashed border-amber-500/30 bg-amber-500/5 flex flex-col items-center gap-2 text-center">
+                    <Landmark className="h-6 w-6 text-amber-500/60" />
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">No payout account linked</p>
+                    <p className="text-[10px] text-muted-foreground">You must set up a bank account before creating a ride.</p>
+                    <Link href="/account">
+                      <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg text-[10px] font-black uppercase tracking-wider border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10">
+                        Set Up Payout Account
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+
+                <Button type="submit" disabled={isLoading || !selectedVehicleId || payoutLinked === false} className="w-full h-12 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-primary/20 transition-all active:scale-[0.98]">
                   {isLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
                   Publish Ride
                 </Button>

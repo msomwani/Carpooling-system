@@ -380,6 +380,13 @@ class RideService:
             if str(vehicle.owner_id) != str(driver_id):
                 raise PermissionError("You do not own this vehicle")
 
+        # Gate: driver must have a payout account linked before offering rides
+        driver = db.query(User).filter(User.id == driver_id).first()
+        if not driver or not driver.razorpay_account_id:
+            raise ValueError(
+                "You must set up a payout account in your profile before creating a ride."
+            )
+
         if total_seats <= 0:
             raise ValueError("Total seats must be greater than zero")
 
