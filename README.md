@@ -118,3 +118,4 @@ Croc Ride is fully operational from an algorithmic routing and booking standpoin
 - **Trust & Verification**: Sprints are planned to implement Phone number OTPs, ID-Card Uploads, and mutual ratings to enforce safety.
 - **Automated Alerts**: Transitioning Kafka events to trigger real-time WebSockets and cross-platform SMS (Twilio/MSG91) updates to notify users of ride status changes offline.
 - **Infrastructure Scaling**: Adding production CI pipelines, securing CORS origins, and moving toward domain/SSL implementations.
+- Contributers-Kuldeep Rathod
