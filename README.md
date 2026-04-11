@@ -61,37 +61,47 @@ The application follows a **modular monolith** architecture for the core backend
 
 ## Application Screenshots
 
-### Home Page - Passenger
-
-![Home Page Passenger](docs/screenshots/Home_passenger.png)
-
-### Home Page - Driver
-
-![Home Page Driver](docs/screenshots/Home_driver.png)
-
-### Search Ride Page
-
-![Search Ride Page](docs/screenshots/Search_ride_page.png)
-
-### Ride Details Page
-
-![Ride Details Page](docs/screenshots/Ride_details_page.png)
-
-### Create Ride Page
-
-![Create Ride Page](docs/screenshots/Create_ride_page.png)
-
-### Booking Page - Passenger
-
-![Booking Page Passenger](docs/screenshots/Booking_passenger.png)
-
-### Booking Page - Driver
-
-![Booking Page Driver](docs/screenshots/Booking_driver.png)
-
-### Account Page
-
-![Account Page](docs/screenshots/Account_page.png)
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/Home_passenger.png" alt="Home Page Passenger" width="300"/><br/>
+      <sub>Home Page - Passenger</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/Home_driver.png" alt="Home Page Driver" width="300"/><br/>
+      <sub>Home Page - Driver</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/Search_ride_page.png" alt="Search Ride Page" width="300"/><br/>
+      <sub>Search Ride Page</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/Ride_details_page.png" alt="Ride Details Page" width="300"/><br/>
+      <sub>Ride Details Page</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/Create_ride_page.png" alt="Create Ride Page" width="300"/><br/>
+      <sub>Create Ride Page</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/Booking_passenger.png" alt="Booking Page Passenger" width="300"/><br/>
+      <sub>Booking Page - Passenger</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/Booking_driver.png" alt="Booking Page Driver" width="300"/><br/>
+      <sub>Booking Page - Driver</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/Account_page.png" alt="Account Page" width="300"/><br/>
+      <sub>Account Page</sub>
+    </td>
+    <td></td>
+  </tr>
+</table>
 
 ## Getting Started
 
