@@ -1,121 +1,211 @@
 <div align="center">
-  <h1>🐊 Croc Ride</h1>
-  <p>A Correctness-First, Community-Driven Carpooling Platform focused on the Vadodara-Halol Corridor.</p>
+  <h1>Carpooling System</h1>
+  <p>A community-focused carpooling platform for the Vadodara-Halol corridor.</p>
 </div>
 
 ---
 
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li><a href="#about-the-project">About The Project</a></li>
-    <li><a href="#key-features">Key Features</a></li>
-    <li><a href="#system-architecture">System Architecture</a></li>
-    <li><a href="#getting-started">Getting Started</a></li>
-    <li><a href="#project-structure">Project Structure</a></li>
-    <li><a href="#development-roadmap">Development Roadmap</a></li>
-  </ol>
-</details>
-
 ## About The Project
 
-**Croc Ride** is a dedicated carpooling application built specifically for repeat, daily commuters traveling along the high-traffic Vadodara (Baroda) to Halol corridor. 
+**Croc Ride** is a carpooling application built for repeat commuters traveling between **Vadodara and Halol**. The platform helps drivers offer rides and passengers discover, book, and pay for shared trips along the same corridor.
 
-Unlike traditional taxi-hailing applications that optimize for instantaneous ad-hoc trips, Croc Ride is designed around **cost-sharing and community trust**. Our goal is to connect individuals driving empty cars with passengers heading precisely on their route. 
+The project combines:
 
-The system started as an experimental concept to handle advanced **Geospatial routing** and **High-Concurrency Seat Booking** safely, and has since matured into a production-inspired, containerized platform.
+- **Next.js + React** for the frontend
+- **FastAPI + Python** for the backend
+- **PostgreSQL + PostGIS** for ride and geospatial data
+- **Redis** for caching and rate limiting
+- **Kafka + background workers** for asynchronous event processing
+- **Google OAuth** for authentication
+- **Razorpay** for payment flows
 
 ## Key Features
 
-- 📍 **Advanced Spatial Search**: Instead of just matching pickup-to-pickup, the system maps the driver's exact journey as a continuous geometric line (`LineString`) and matches passengers standing anywhere along that route.
-- 🚦 **Smart Corridor Geocoding**: Native support for searching colloquial route landmarks (e.g., "Airport", "Station") which are converted instantly into exact geospatial coordinates.
-- 🚗 **Multi-Vehicle Management**: Drivers can maintain a virtual garage of their vehicles and toggle between them prior to creating shared rides.
-- 🔒 **Race-Condition-Proof Bookings**: Relying deeply on PostgreSQL's row-level locking (`SELECT FOR UPDATE`), the platform guarantees that in a split-second race between 10 passengers for 1 remaining seat, exactly one person gets the booking without data corruption.
-- 🛡️ **Frictionless Google OAuth**: Clean, spam-free onboarding configured exclusively through `@react-oauth/google` with strict, stateless backend cookie session validation.
+- **Ride creation and discovery** with route-based search
+- **Geospatial ride matching** using PostGIS and stored route geometry
+- **Cookie-based Google OAuth login**
+- **Vehicle management** for drivers
+- **Seat booking flow** with concurrency-safe booking logic
+- **Payment order, verification, refund, and settlement flows** with Razorpay
+- **Redis-backed rate limiting** on state-changing endpoints
+- **Outbox-pattern event publishing** with Kafka workers
+- **Passenger and driver dashboards** for bookings, rides, and analytics
+
+## Tech Stack
+
+- **Frontend:** Next.js 16, React 19, Tailwind CSS, Leaflet, OpenStreetMap
+- **Backend:** FastAPI, Python 3.11, SQLAlchemy, Alembic
+- **Database:** PostgreSQL + PostGIS
+- **Cache / Limits:** Redis
+- **Messaging:** Apache Kafka + Zookeeper
+- **Payments:** Razorpay
+- **Authentication:** Google OAuth
+- **Deployment / Local Dev:** Docker Compose
 
 ## System Architecture
 
-We employ a **Modular Monolith** architecture. While microservices offer scaling patterns, keeping domains bound in a single codebase with clean folder separation achieves immense developer velocity while preserving strict transactional ACID guarantees.
+The application follows a **modular monolith** architecture for the core backend, supported by **Kafka-based background workers** for asynchronous processing.
 
-- **Frontend Web**: Next.js (App Router), Tailwind CSS, Leaflet Maps, OSRM Routing.
-- **Backend Core**: Python, FastAPI.
-- **Source of Truth**: PostgreSQL + PostGIS (Mandatory for our geometric routing math).
-- **Speed Layer**: Redis (Caching frequent ride searches and enforcing rate limiting on all state-changing API endpoints).
-- **Asynchronous Reliability**: Apache Kafka.
-- **The Delivery Guarantee**: We utilize the **Outbox Pattern**. Booking events are written into an `outbox_events` table in the exact same database transaction as the booking itself. A background worker picks this up to fire off to Kafka. This guarantees we never lose an event if external services drop temporarily.
+![System Architecture](docs/architecture/Architecture.jpg)
+
+### Architecture Summary
+
+- The **frontend** is a Next.js application that serves the user-facing experience for searching rides, booking seats, creating rides, and managing profiles.
+- The **backend API** is a FastAPI application that handles authentication, rides, bookings, vehicles, payments, analytics, and notifications.
+- **PostgreSQL + PostGIS** acts as the system of record for users, rides, bookings, vehicles, and spatial route data.
+- **Redis** is used for caching and rate limiting.
+- **Kafka** carries asynchronous events generated by booking and ride actions.
+- **Workers** process outbox events, booking history events, and notification events.
+- **Google OAuth** is used for sign-in.
+- **Razorpay** is used for payment, refund, and payout-account flows.
+
+## Application Screenshots
+
+### Home Page - Passenger
+
+![Home Page Passenger](docs/screenshots/Home_passenger.png)
+
+### Home Page - Driver
+
+![Home Page Driver](docs/screenshots/Home_driver.png)
+
+### Search Ride Page
+
+![Search Ride Page](docs/screenshots/Search_ride_page.png)
+
+### Ride Details Page
+
+![Ride Details Page](docs/screenshots/Ride_details_page.png)
+
+### Create Ride Page
+
+![Create Ride Page](docs/screenshots/Create_ride_page.png)
+
+### Booking Page - Passenger
+
+![Booking Page Passenger](docs/screenshots/Booking_passenger.png)
+
+### Booking Page - Driver
+
+![Booking Page Driver](docs/screenshots/Booking_driver.png)
+
+### Account Page
+
+![Account Page](docs/screenshots/Account_page.png)
 
 ## Getting Started
 
-Because of our reliance on Kafka, Redis, and PostGIS, the easiest way to run the platform locally is via Docker.
+Because this project depends on **PostgreSQL/PostGIS, Redis, Kafka, and multiple workers**, the easiest way to run it locally is with Docker Compose.
 
 ### Prerequisites
-- Docker & Docker Compose Desktop
 
-### Local Installation
+- Docker Desktop
+- Docker Compose
 
-1. **Configure Environment Variables**
-   Create a `.env` in the root directory referencing your API Keys:
-   ```env
-   GOOGLE_CLIENT_ID=your_google_oauth_client_id
-   JWT_SECRET=your_strong_secret
-   POSTGRES_USER=your_postgres_user
-   POSTGRES_PASSWORD=your_strong_postgres_password
-   POSTGRES_DB=carpooling_db
-   REDIS_PASSWORD=your_strong_redis_password
-   REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
-   RAZORPAY_KEY_ID=your_razorpay_key_id
-   RAZORPAY_KEY_SECRET=your_razorpay_key_secret
-   NEXT_PUBLIC_RAZORPAY_KEY_ID=your_razorpay_key_id
-   ```
-   > See `.env.example` for the full reference with all required keys.
+### Environment Setup
 
-2. **Spin Up the Infra**
-   Deploy the entire 9-container stack (Database, Cache, Message Brokers, Event Workers, APIs, and Frontend) in one command:
-   ```bash
-   docker compose up -d --build
-   ```
+1. Copy the root environment template:
 
-3. **Access the App**
-   - **Frontend App:** [http://localhost:3000](http://localhost:3000)
-   - **Backend Server / API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+```bash
+cp .env.example .env
+```
+
+2. Update the values in `.env`.
+
+Important variables used by the Docker-based setup include:
+
+```env
+POSTGRES_DB=carpooling_db
+POSTGRES_USER=your_postgres_user
+POSTGRES_PASSWORD=your_strong_postgres_password
+JWT_SECRET=replace_with_a_strong_random_secret
+REDIS_PASSWORD=your_strong_redis_password
+REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+GOOGLE_CLIENT_ID=your_google_oauth_client_id.apps.googleusercontent.com
+METRICS_API_KEY=your_strong_metrics_api_key
+```
+
+If you want to run the frontend separately outside Docker, also check:
+
+- `carpool-frontend/.env.example`
+- `backend/.env.example`
+
+### Run With Docker Compose
+
+```bash
+docker compose up -d --build
+```
+
+This starts the local stack including:
+
+- PostgreSQL + PostGIS
+- Redis
+- Zookeeper
+- Kafka
+- Kafka topic bootstrap container
+- FastAPI backend
+- Outbox worker
+- Booking consumer
+- Notification consumer
+- Next.js frontend
+
+### Access the App
+
+- **Frontend:** [http://localhost:3000](http://localhost:3000)
+- **Backend API Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Health Check:** [http://localhost:8000/healthz](http://localhost:8000/healthz)
 
 ## Project Structure
 
 ```text
 Croc Ride/
-├── backend/                  # FastAPI Application
+├── backend/
 │   ├── app/
-│   │   ├── users/            # Profiles, Vehicles, Role Hierarchy
-│   │   ├── rides/            # Ride Creation & Geospatial Algorithms
-│   │   ├── bookings/         # Transaction-safe seat reservations
-│   │   ├── auth/             # Google OAuth & JWT handler APIs
-│   │   └── workers/          # Background Kafka Workers (Outbox Polling)
-│   └── ...
-├── carpool-frontend/         # Next.js Application
-│   ├── app/                  # Next.js Server Components & Pages
-│   ├── components/           # Reusable UI (Leaflet Maps, Shadcn) 
-│   └── lib/                  # AuthContext Providers and fetchers
-└── docker-compose.yml        # Docker orchestration configuration
+│   │   ├── auth/              # Authentication and JWT cookie handling
+│   │   ├── users/             # User profile and role operations
+│   │   ├── vehicles/          # Driver vehicle management
+│   │   ├── rides/             # Ride creation, lifecycle, and route search
+│   │   ├── bookings/          # Booking, cancellation, and boarding flow
+│   │   ├── payments/          # Razorpay order, verify, refund, payouts
+│   │   ├── analytics/         # Platform and user analytics
+│   │   ├── notifications/     # Notification endpoints and websocket support
+│   │   ├── workers/           # Kafka/outbox background workers
+│   │   └── common/            # DB, Redis, Kafka, middleware, metrics
+│   ├── alembic/               # Database migrations
+│   └── requirements.txt
+├── carpool-frontend/
+│   ├── app/                   # Next.js App Router pages
+│   ├── components/            # Shared UI and map components
+│   ├── lib/                   # Context providers and helpers
+│   └── package.json
+├── docs/
+│   ├── architecture/          # Architecture image(s)
+│   └── screenshots/           # Application screenshots
+└── docker-compose.yml
 ```
 
-## Development Roadmap
+## Current Implementation Status
 
-Croc Ride is fully operational from an algorithmic routing and booking standpoint, but is continuously improving towards a public release. The current developmental roadmap distinguishes between what is functional and what is queued up:
+Implemented in the current codebase:
 
-**✅ Fully Implemented & Functioning:**
-- Google OAuth for identity verification + stateless JWT session management stored in HTTP-Only cookies (never exposed to JavaScript).
-- OSRM Polyline generation & Advanced PostGIS `ST_DWithin` spatial ride matching (proximity-based to pickup point).
-- Concurrency-safe seat allocation via PostgreSQL `SELECT FOR UPDATE` row-level locking.
-- Fraud-proof boarding flow — passenger must confirm presence ("I'm Here") before driver can mark them as boarded.
-- Automated ride reconciliation — missed-start auto-refunds and 6-hour auto-completion via lazy reconciliation on every request.
-- `slowapi` rate limiting on all state-changing endpoints, backed by Redis.
-- Fully dockerized 9-service `docker-compose` orchestration (Frontend, Backend, Postgres, Redis, Kafka, Zookeeper, 3 Workers).
+- Google OAuth sign-in with JWT cookies
+- Ride creation and ride discovery
+- Vehicle management
+- Booking and cancellation flows
+- Boarding confirmation flow
+- Razorpay order creation and payment verification
+- Refund and settlement-related backend flows
+- Kafka-based outbox and consumer workers
+- Redis-backed rate limiting
+- Passenger and driver analytics pages
 
-**⚙️ Payments (Test Mode Active):**
-- **Razorpay Integration**: Our escrow payment gateway is successfully built and holding payments in **Test Mode**. It handles capturing funds and executing automated refunds during user cancellations. We are actively finalizing security audits before pushing it to a live production environment.
+Notes:
 
-**🚧 In the Backlog / Pending:**
-- **Trust & Verification**: Sprints are planned to implement Phone number OTPs, ID-Card Uploads, and mutual ratings to enforce safety.
-- **Automated Alerts**: Transitioning Kafka events to trigger real-time WebSockets and cross-platform SMS (Twilio/MSG91) updates to notify users of ride status changes offline.
-- **Infrastructure Scaling**: Adding production CI pipelines, securing CORS origins, and moving toward domain/SSL implementations.
-- Contributers-Kuldeep Rathod
+- The frontend currently uses **Leaflet + OpenStreetMap**, not Google Maps.
+- A WebSocket notifications endpoint exists in the backend.
+- Notification processing is present through background consumers.
+
+## Contributors
+
+- Kuldeep Rathod ([Kuldeep291104](https://github.com/Kuldeep291104))
