@@ -37,7 +37,7 @@ export default function LoginPage() {
       // Temporary debug hook so we can copy the Google ID token for Swagger screenshots.
       if (typeof window !== "undefined") {
         sessionStorage.setItem("debug_google_id_token", idToken)
-        ;(window as Window & { __debugGoogleIdToken?: string }).__debugGoogleIdToken = idToken
+          ; (window as Window & { __debugGoogleIdToken?: string }).__debugGoogleIdToken = idToken
         console.log("Google ID token:", idToken)
       }
 
@@ -131,7 +131,7 @@ export default function LoginPage() {
               <Image src="/croc_mascot(y).png" alt="Croc Ride Mascot" fill sizes="48px" className="object-contain" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold tracking-tight">Croc Ride</CardTitle>
+          <CardTitle className="text-2xl font-bold tracking-tight">Carpooling System</CardTitle>
           <CardDescription className="text-sm">
             Vadodara <span className="text-primary mx-1">⇄</span> Halol Commute
           </CardDescription>

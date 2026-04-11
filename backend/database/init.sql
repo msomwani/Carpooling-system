@@ -21,11 +21,25 @@ CREATE TABLE users (
 CREATE TYPE ridestatus AS ENUM ('SCHEDULED', 'STARTED', 'COMPLETED', 'CANCELLED', 'MISSED_START');
 CREATE TYPE ridecompletionsource AS ENUM ('DRIVER', 'SYSTEM');
 CREATE TYPE bookingtripstatus AS ENUM ('BOOKED', 'READY_AT_PICKUP', 'BOARDED', 'DROPPED', 'NO_SHOW');
+CREATE TYPE vehicletype AS ENUM ('CAR', 'BIKE');
+
+-- Vehicles table
+CREATE TABLE vehicles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    make VARCHAR(100) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    color VARCHAR(50) NOT NULL,
+    license_plate VARCHAR(20) NOT NULL UNIQUE,
+    type vehicletype NOT NULL DEFAULT 'CAR',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
 
 -- Rides table
 CREATE TABLE rides (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     driver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vehicle_id UUID REFERENCES vehicles(id),
     source VARCHAR(255) NOT NULL,
     source_lat DOUBLE PRECISION,
     source_lng DOUBLE PRECISION,
@@ -34,9 +48,11 @@ CREATE TABLE rides (
     destination_lng DOUBLE PRECISION,
     source_location GEOGRAPHY(POINT, 4326),
     destination_location GEOGRAPHY(POINT, 4326),
+    route_geometry GEOGRAPHY(LINESTRING, 4326),
     departure_time TIMESTAMP NOT NULL,
     total_seats INTEGER NOT NULL CHECK (total_seats > 0),
     available_seats INTEGER NOT NULL CHECK (available_seats >= 0),
+    price_per_seat INTEGER NOT NULL DEFAULT 0,
     status ridestatus NOT NULL DEFAULT 'SCHEDULED',
     actual_started_at TIMESTAMP,
     actual_completed_at TIMESTAMP,
@@ -93,9 +109,10 @@ CREATE INDEX idx_rides_source_coords ON rides(source_lat, source_lng);
 CREATE INDEX idx_rides_destination_coords ON rides(destination_lat, destination_lng);
 CREATE INDEX idx_rides_source_location ON rides USING GIST (source_location);
 CREATE INDEX idx_rides_destination_location ON rides USING GIST (destination_location);
+CREATE INDEX idx_rides_route_geometry ON rides USING GIST (route_geometry);
 
--- Partial unique index: only enforces uniqueness for CONFIRMED bookings
--- This allows multiple CANCELLED bookings but only one CONFIRMED booking per passenger per ride
+-- Partial unique index: only enforces uniqueness for active bookings
+-- This allows multiple closed bookings but only one active booking per passenger per ride
 CREATE UNIQUE INDEX unique_active_ride_passenger 
 ON bookings (ride_id, passenger_id) 
 WHERE status IN ('PENDING_PAYMENT', 'PAID_HELD', 'CONFIRMED');
@@ -104,7 +121,7 @@ WHERE status IN ('PENDING_PAYMENT', 'PAID_HELD', 'CONFIRMED');
 CREATE TABLE booking_idempotency (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     idempotency_key VARCHAR(100) NOT NULL UNIQUE,
-    booking_id UUID,
+    booking_id UUID REFERENCES bookings(id),
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

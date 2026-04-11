@@ -677,14 +677,25 @@ class RideService:
                 },
             )
 
-        from app.payments.service import PaymentService
-
-        payment_svc = PaymentService()
+        refund_requests: list[dict[str, str | int]] = []
         for booking in active_bookings:
-            if booking.razorpay_payment_id:
-                refund_amount = int(booking.seats_booked * ride.price_per_seat * 100)
-                payment_svc.refund_payment(booking.razorpay_payment_id, refund_amount)
-                booking.refunded_amount_paise = refund_amount
+            refund_amount = int(booking.seats_booked * ride.price_per_seat * 100)
+            if booking.razorpay_payment_id and refund_amount > 0:
+                refund_requests.append(
+                    {
+                        "booking_id": str(booking.id),
+                        "passenger_id": str(booking.passenger_id),
+                        "payment_id": booking.razorpay_payment_id,
+                        "refund_amount": refund_amount,
+                    }
+                )
+            booking.trip_status = BookingTripStatus.BOOKED
+            booking.boarded_seats = 0
+            booking.passenger_ready_at = None
+            booking.boarded_at = None
+            booking.passenger_boarding_confirmed_at = None
+            booking.settled_amount_paise = 0
+            booking.refunded_amount_paise = 0
             booking.status = "CANCELLED"
             RideService._queue_event(
                 db,
@@ -704,6 +715,59 @@ class RideService:
         from app.common.redis import invalidate_rides_cache
 
         invalidate_rides_cache()
+
+        if not refund_requests:
+            return ride
+
+        from app.payments.service import PaymentService
+
+        payment_svc = PaymentService()
+        for refund_request in refund_requests:
+            try:
+                payment_svc.refund_payment(
+                    refund_request["payment_id"],
+                    refund_request["refund_amount"],
+                )
+            except Exception:
+                logger.exception(
+                    "Refund failed after local driver cancellation commit for booking %s",
+                    refund_request["booking_id"],
+                    extra={"correlation_id": correlation_id},
+                )
+                continue
+
+            try:
+                booking = (
+                    db.query(Booking)
+                    .filter(Booking.id == refund_request["booking_id"])
+                    .with_for_update()
+                    .first()
+                )
+                if not booking:
+                    continue
+
+                booking.refunded_amount_paise = int(refund_request["refund_amount"])
+                RideService._queue_event(
+                    db,
+                    "booking.refunded",
+                    {
+                        "booking_id": str(booking.id),
+                        "ride_id": str(ride.id),
+                        "passenger_id": str(booking.passenger_id),
+                        "reason": "DRIVER_CANCELLED",
+                        "refunded_amount_paise": booking.refunded_amount_paise,
+                        "correlation_id": correlation_id,
+                    },
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "Refund succeeded externally but local refund bookkeeping update failed for booking %s",
+                    refund_request["booking_id"],
+                    extra={"correlation_id": correlation_id},
+                )
+
         return ride
 
     @staticmethod

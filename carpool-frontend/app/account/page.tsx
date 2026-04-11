@@ -105,8 +105,8 @@ export default function AccountPage() {
   const [profile, setProfile] = useState({
     name: "",
     email: "",
-        phone: "",
-        age: "24" // Default mock age
+    phone: "",
+    age: "24" // Default mock age
   })
 
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
@@ -359,19 +359,19 @@ export default function AccountPage() {
   const validators = {
     legal_name: (v: string) =>
       v.trim().length < 2 ? "Name must be at least 2 characters" :
-      /[^a-zA-Z\s'.\-]/.test(v) ? "Name must not contain numbers or special characters" : null,
+        /[^a-zA-Z\s'.\-]/.test(v) ? "Name must not contain numbers or special characters" : null,
     phone: (v: string) =>
       !/^\d{10}$/.test(v) ? "Enter a valid 10-digit Indian mobile number" : null,
     email: (v: string) =>
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "Enter a valid email address" : null,
     beneficiary_name: (v: string) =>
       v.trim().length < 2 ? "Account holder name must be at least 2 characters" :
-      /[^a-zA-Z\s'.\-]/.test(v) ? "Name must not contain numbers or special characters" : null,
+        /[^a-zA-Z\s'.\-]/.test(v) ? "Name must not contain numbers or special characters" : null,
     account_number: (v: string) =>
       !/^\d{9,18}$/.test(v) ? `Account number must be 9–18 digits (you entered ${v.length})` : null,
     ifsc_code: (v: string) =>
       v.length < 11 ? `IFSC must be exactly 11 characters (you entered ${v.length})` :
-      !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(v) ? "Invalid IFSC format — e.g. HDFC0001234 (4 letters, 0, 6 alphanumeric)" : null,
+        !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(v) ? "Invalid IFSC format — e.g. HDFC0001234 (4 letters, 0, 6 alphanumeric)" : null,
   }
 
   const validatePayoutField = (field: keyof PayoutForm, value: string) => {
@@ -517,7 +517,7 @@ export default function AccountPage() {
                 className="object-contain"
               />
             </div>
-            <h1 className="text-lg font-bold">Croc Ride</h1>
+            <h1 className="text-lg font-bold">Carpooling System</h1>
           </div>
         </div>
 
@@ -536,26 +536,26 @@ export default function AccountPage() {
               <p className="text-sm font-bold text-destructive">{analyticsError}</p>
             </Card>
           ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {stats.map((stat, i) => (
-              <Card key={i} className="rounded-3xl border-none shadow-sm bg-background p-5 hover:shadow-md transition-shadow">
-                <div className="flex flex-col gap-3">
-                  <div className={`${stat.bg} ${stat.color} w-9 h-9 rounded-xl flex items-center justify-center`}>
-                    <stat.icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-1">{stat.label}</p>
-                    <div className="flex items-center gap-2">
-                      <p className={`text-xl font-black ${stat.color} tracking-tighter`}>{stat.value}</p>
-                      {isAnalyticsLoading && (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
+            <div className="grid grid-cols-2 gap-4">
+              {stats.map((stat, i) => (
+                <Card key={i} className="rounded-3xl border-none shadow-sm bg-background p-5 hover:shadow-md transition-shadow">
+                  <div className="flex flex-col gap-3">
+                    <div className={`${stat.bg} ${stat.color} w-9 h-9 rounded-xl flex items-center justify-center`}>
+                      <stat.icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest leading-none mb-1">{stat.label}</p>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-xl font-black ${stat.color} tracking-tighter`}>{stat.value}</p>
+                        {isAnalyticsLoading && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+                </Card>
+              ))}
+            </div>
           )}
         </section>
 
@@ -1034,9 +1034,9 @@ export default function AccountPage() {
         <div className="text-center opacity-40 pb-4">
           <div className="flex items-center justify-center gap-2 grayscale mb-1">
             <Image src="/croc_mascot(y).png" alt="Croc" width={14} height={14} />
-            <p className="text-[9px] font-black uppercase tracking-[0.2em]">Croc Ride v1.2.4</p>
+            <p className="text-[9px] font-black uppercase tracking-[0.2em]">Carpooling System v1.0.0</p>
           </div>
-          <p className="text-[7px] font-bold uppercase tracking-widest">© 2024 Croc Ride Inc.</p>
+          <p className="text-[7px] font-bold uppercase tracking-widest">© 2026 Carpooling System</p>
         </div>
 
       </main>

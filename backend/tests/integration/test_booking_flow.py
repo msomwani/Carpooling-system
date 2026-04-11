@@ -1,6 +1,7 @@
 import pytest
 from uuid import uuid4
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 from app.bookings.service import BookingService
 from app.bookings.cancel_service import CancellationService
@@ -205,6 +206,73 @@ class TestBookingFlow:
                 user_id=str(sample_passenger.id),
                 correlation_id="double-cancel-corr-3"
             )
+
+    def test_paid_booking_cancellation_updates_refund_bookkeeping(self, db, sample_ride, sample_passenger):
+        booking = BookingService.create_booking(
+            db=db,
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_requested=1,
+            idempotency_key="paid-cancel-1",
+            correlation_id="paid-cancel-corr-1",
+        )
+        booking.status = "PAID_HELD"
+        booking.razorpay_payment_id = "pay_paid_cancel_123"
+        db.commit()
+
+        payment_service = MagicMock()
+        with patch("app.payments.service.PaymentService", return_value=payment_service):
+            cancelled_booking = CancellationService.cancel_booking(
+                db=db,
+                booking_id=str(booking.id),
+                user_id=str(sample_passenger.id),
+                correlation_id="paid-cancel-corr-2",
+            )
+
+        db.refresh(sample_ride)
+        db.refresh(cancelled_booking)
+        assert cancelled_booking.status == "CANCELLED"
+        assert cancelled_booking.refunded_amount_paise == sample_ride.price_per_seat * 100
+        assert sample_ride.available_seats == 4
+        payment_service.refund_payment.assert_called_once_with(
+            "pay_paid_cancel_123",
+            sample_ride.price_per_seat * 100,
+        )
+        refunded_events = db.query(OutboxEvent).filter(
+            OutboxEvent.event_type == "booking.refunded"
+        ).count()
+        assert refunded_events >= 1
+
+    def test_paid_booking_cancellation_survives_refund_failure(self, db, sample_ride, sample_passenger):
+        booking = BookingService.create_booking(
+            db=db,
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_requested=1,
+            idempotency_key="paid-cancel-2",
+            correlation_id="paid-cancel-corr-3",
+        )
+        booking.status = "PAID_HELD"
+        booking.razorpay_payment_id = "pay_paid_cancel_456"
+        db.commit()
+
+        payment_service = MagicMock()
+        payment_service.refund_payment.side_effect = RuntimeError("Razorpay declined refund")
+
+        with patch("app.payments.service.PaymentService", return_value=payment_service):
+            cancelled_booking = CancellationService.cancel_booking(
+                db=db,
+                booking_id=str(booking.id),
+                user_id=str(sample_passenger.id),
+                correlation_id="paid-cancel-corr-4",
+            )
+
+        db.refresh(sample_ride)
+        db.refresh(cancelled_booking)
+        assert cancelled_booking.status == "CANCELLED"
+        assert cancelled_booking.refunded_amount_paise == 0
+        assert sample_ride.available_seats == 4
+        payment_service.refund_payment.assert_called_once()
     
     def test_booking_creates_correlation_chain(self, db, sample_ride, sample_passenger):
         """Test that correlation IDs are properly tracked across events."""

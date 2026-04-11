@@ -208,3 +208,67 @@ class TestRideService:
 
         payment_service.create_transfer.assert_not_called()
         payment_service.release_transfer.assert_called_once_with("trf_existing_456")
+
+    def test_cancel_ride_records_refund_without_rolling_back_cancellation(self, db, sample_ride, sample_driver, sample_passenger):
+        booking = Booking(
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_booked=1,
+            status="PAID_HELD",
+            trip_status=BookingTripStatus.BOOKED,
+            razorpay_payment_id="pay_cancel_ride_123",
+        )
+        db.add(booking)
+        db.commit()
+
+        payment_service = MagicMock()
+
+        with patch("app.payments.service.PaymentService", return_value=payment_service), patch(
+            "app.common.redis.invalidate_rides_cache"
+        ):
+            ride = RideService.cancel_ride(
+                db=db,
+                ride_id=str(sample_ride.id),
+                driver_id=str(sample_driver.id),
+                correlation_id="driver-cancel-corr-1",
+            )
+
+        db.refresh(booking)
+        assert ride.status == RideStatus.CANCELLED
+        assert booking.status == "CANCELLED"
+        assert booking.refunded_amount_paise == sample_ride.price_per_seat * 100
+        payment_service.refund_payment.assert_called_once_with(
+            "pay_cancel_ride_123",
+            sample_ride.price_per_seat * 100,
+        )
+
+    def test_cancel_ride_keeps_local_cancellation_if_refund_fails(self, db, sample_ride, sample_driver, sample_passenger):
+        booking = Booking(
+            ride_id=sample_ride.id,
+            passenger_id=sample_passenger.id,
+            seats_booked=1,
+            status="PAID_HELD",
+            trip_status=BookingTripStatus.BOOKED,
+            razorpay_payment_id="pay_cancel_ride_456",
+        )
+        db.add(booking)
+        db.commit()
+
+        payment_service = MagicMock()
+        payment_service.refund_payment.side_effect = RuntimeError("Refund failed")
+
+        with patch("app.payments.service.PaymentService", return_value=payment_service), patch(
+            "app.common.redis.invalidate_rides_cache"
+        ):
+            ride = RideService.cancel_ride(
+                db=db,
+                ride_id=str(sample_ride.id),
+                driver_id=str(sample_driver.id),
+                correlation_id="driver-cancel-corr-2",
+            )
+
+        db.refresh(booking)
+        assert ride.status == RideStatus.CANCELLED
+        assert booking.status == "CANCELLED"
+        assert booking.refunded_amount_paise == 0
+        payment_service.refund_payment.assert_called_once()
